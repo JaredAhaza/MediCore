@@ -5,9 +5,10 @@ Backend for a clinic system built with Django + DRF, using JWT auth and PostgreS
 ## Stack
 - Django 5
 - Django REST Framework
-- SimpleJWT (JWT auth)
-- PostgreSQL (Supabase session pooler)
+- SimpleJWT (JWT)
+- PostgreSQL (Supabase pooler)
 - django-cors-headers
+- python-dotenv
 
 ## Project Structure (backend)
 - `MediCore/settings.py` — project settings
