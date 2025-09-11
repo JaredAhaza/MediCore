@@ -36,19 +36,31 @@ pip install Django djangorestframework djangorestframework-simplejwt django-cors
 ### 3) Configure database (Supabase session pooler recommended)
 Edit `MediCore/settings.py`:
 ```python
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
+DEBUG = os.getenv("DEBUG", "0") == "1"
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+
+CORS_ALLOWED_ORIGINS = [o for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o]
+CORS_ALLOW_CREDENTIALS = True
+
 DATABASES = {
 	'default': {
 		'ENGINE': 'django.db.backends.postgresql',
-		'NAME': 'postgres',
-		'USER': 'postgres.issmwizqroatzqseaogs',  # replace if yours differs
-		'PASSWORD': '@Medicore45',                # replace with your password
-		'HOST': 'aws-1-eu-north-1.pooler.supabase.com',
-		'PORT': '5432',
+		'NAME': os.getenv('DB_NAME', 'postgres'),
+		'USER': os.getenv('DB_USER', ''),
+		'PASSWORD': os.getenv('DB_PASSWORD', ''),
+		'HOST': os.getenv('DB_HOST', 'localhost'),
+		'PORT': os.getenv('DB_PORT', '5432'),
 	}
 }
 ```
-
-Optionally set these via environment variables and read them in settings.
 
 ### 4) Apply migrations and create admin user
 ```bash
@@ -136,3 +148,11 @@ python manage.py run_all_tests
 - Finance (Invoice, Payment)
 - Audit logs and analytics
 - Frontend (Vue 3 + Pinia + Router) and integration
+
+### Environment
+Create `backend/.env` (not committed):
+- SECRET_KEY, DEBUG, ALLOWED_HOSTS
+- CORS_ALLOWED_ORIGINS
+- DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
+
+This removes hard-coded secrets and keeps your Supabase creds out of git.
