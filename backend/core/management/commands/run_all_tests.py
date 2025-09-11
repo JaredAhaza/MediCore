@@ -21,5 +21,8 @@ class Command(BaseCommand):
         self.stdout.write('\n3. Testing API Authentication:')
         call_command('test_api', '--no-reset')
 
+        self.stdout.write('\n4. Testing Patients & Visits:')
+        call_command('test_patients', '--no-reset')
+
         self.stdout.write('\n' + '=' * 50)
         self.stdout.write(self.style.SUCCESS('🎉 All tests completed!'))
