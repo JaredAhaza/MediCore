@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-41l+jbno(a2jt)@vj8n+kz_*fi_#1nh5!juimxn!#ie&mne7r5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -38,9 +38,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "users",
+    "rest_framework",
+    "corsheaders",
+    "core"
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -75,8 +79,12 @@ WSGI_APPLICATION = 'Medicore.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'postgres',
+        'USER': 'postgres.issmwizqroatzqseaogs',
+        'PASSWORD': '@Medicore45',
+        'HOST': 'aws-1-eu-north-1.pooler.supabase.com',
+        'PORT': '5432',
     }
 }
 
@@ -123,3 +131,18 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = "users.User"
+
+REST_FRAMEWORK = {
+	'DEFAULT_AUTHENTICATION_CLASSES': [
+		'rest_framework_simplejwt.authentication.JWTAuthentication',
+	],
+	'DEFAULT_PERMISSION_CLASSES': [
+		'rest_framework.permissions.IsAuthenticated',
+	],
+}
+
+CORS_ALLOWED_ORIGINS = [
+	'http://localhost:5173',
+	'http://127.0.0.1:5173',
+]
+CORS_ALLOW_CREDENTIALS = True
