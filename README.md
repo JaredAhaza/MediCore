@@ -13,8 +13,10 @@ Backend for a clinic system built with Django + DRF, using JWT auth and PostgreS
 ## Project Structure (backend)
 - `MediCore/settings.py` — project settings
 - `users` — custom user model `users.User` with `role`
+- `patients` — `Patient`, `Visit` models + CRUD API
+- `emr` — `LabReport`, `Prescription`, `TreatmentNote` models + APIs
 - `core/management/commands` — test utilities:
-  - `test_db`, `test_users`, `test_api`, `run_all_tests`, `clean_test_data`
+  - `test_db`, `test_users`, `test_api`, `test_patients`, `test_emr`, `run_all_tests`, `clean_test_data`
 
 ## Setup
 
@@ -133,6 +135,20 @@ python manage.py test_api
 python manage.py test_api --no-reset
 ```
 
+- Patients & visits (CRUD, permissions, search/order):
+```bash
+python manage.py test_patients
+# Skip cleanup:
+python manage.py test_patients --no-reset
+```
+
+- EMR (prescriptions, treatment notes):
+```bash
+python manage.py test_emr
+# Skip cleanup:
+python manage.py test_emr --no-reset
+```
+
 - Clean test data explicitly:
 ```bash
 python manage.py clean_test_data
@@ -143,12 +159,101 @@ python manage.py clean_test_data
 python manage.py run_all_tests
 ```
 
+## Patients API
+Models:
+- `Patient`: `name`, `dob`, `gender`, `contact`, `medical_id` (unique)
+- `Visit`: `patient`, `doctor`, `date`, `reason`, `notes`
+
+Endpoints (mounted under `/api/`):
+- `GET/POST /api/patients/`
+- `GET/PATCH/DELETE /api/patients/{id}/`
+- `GET/POST /api/visits/`
+- `GET/PATCH/DELETE /api/visits/{id}/`
+
+Permissions:
+- Read: any authenticated user
+- Write: `ADMIN`, `DOCTOR`, `LAB_TECH`, `PHARMACIST`
+- Search/order: `?search=`, `?ordering=`
+
+Examples:
+```json
+POST /api/patients/
+{
+  "name":"John Doe",
+  "dob":"1990-01-01",
+  "gender":"MALE",
+  "contact":"555-0100",
+  "medical_id":"MD-0001"
+}
+```
+```json
+POST /api/visits/
+{
+  "patient": 1,
+  "date": "2025-09-11T10:00:00Z",
+  "reason": "Checkup",
+  "notes": "Initial visit"
+}
+```
+
+## EMR API
+Models:
+- `LabReport`: `patient`, `lab_tech`, `report_type`, `results`, `status`
+- `Prescription`: `patient`, `doctor`, `pharmacist`, `medication`, `dosage`, `duration`, `instructions`, `status`
+- `TreatmentNote`: `patient`, `doctor`, `visit?`, `diagnosis`, `treatment_plan`, `notes`
+
+Endpoints (mounted under `/api/`):
+- `GET/POST /api/lab-reports/` (write: `ADMIN`/`LAB_TECH`)
+- `GET/POST/PATCH /api/prescriptions/` (create/edit: `ADMIN`/`DOCTOR`; status update also allowed for `PHARMACIST`)
+- `GET/POST /api/treatment-notes/` (write: `ADMIN`/`DOCTOR`)
+
+Examples:
+```json
+POST /api/prescriptions/
+{
+  "patient": 1,
+  "medication": "Amoxicillin 500mg",
+  "dosage": "1 capsule",
+  "duration": "7 days",
+  "instructions": "After meals",
+  "status": "PENDING"
+}
+```
+```json
+POST /api/treatment-notes/
+{
+  "patient": 1,
+  "diagnosis": "Acute pharyngitis",
+  "treatment_plan": "Antibiotics + rest + fluids",
+  "notes": "Review in 7 days"
+}
+```
+
+## Frontend (Vue 3 + Vite)
+Directory: `frontend/`
+
+Setup:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Env: create `frontend/.env.development`
+```
+VITE_API_BASE=http://localhost:8000
+```
+
+Key routes (guards by role):
+- `/login`, `/me`
+- `/patients`, `/patients/new`
+- `/emr/prescriptions`, `/emr/prescriptions/new` (create: `ADMIN`/`DOCTOR`; pharmacists can update status)
+- `/emr/treatment-notes`, `/emr/treatment-notes/new` (create: `ADMIN`/`DOCTOR`)
+
 ## Next Steps
-- Add `patients` app (Patient, Visit models + CRUD)
-- EMR modules (LabReport, Prescription, Treatment Notes)
 - Finance (Invoice, Payment)
 - Audit logs and analytics
-- Frontend (Vue 3 + Pinia + Router) and integration
+- Async tasks (Celery) and Dockerization
 
 ### Environment
 Create `backend/.env` (not committed):
