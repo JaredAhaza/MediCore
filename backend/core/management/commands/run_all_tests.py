@@ -24,5 +24,8 @@ class Command(BaseCommand):
         self.stdout.write('\n4. Testing Patients & Visits:')
         call_command('test_patients', '--no-reset')
 
+		self.stdout.write('\n5. Testing EMR (Prescriptions & Treatment Notes):')
+		call_command('test_emr', '--no-reset')
+
         self.stdout.write('\n' + '=' * 50)
         self.stdout.write(self.style.SUCCESS('🎉 All tests completed!'))

@@ -28,6 +28,20 @@ class Command(BaseCommand):
 			removed_visits = 0
 			removed_patients = 0
 
+		# Clean EMR created by tests
+		try:
+			from emr.models import Prescription, TreatmentNote, LabReport
+			p_count = Prescription.objects.filter(medication__startswith='Amoxicillin').count()
+			Prescription.objects.filter(medication__startswith='Amoxicillin').delete()
+			n_count = TreatmentNote.objects.filter(notes__startswith='TEST_').count()
+			TreatmentNote.objects.filter(notes__startswith='TEST_').delete()
+			l_count = LabReport.objects.filter(report_type__startswith='TEST_').count()
+			LabReport.objects.filter(report_type__startswith='TEST_').delete()
+		except Exception:
+			p_count = 0
+			n_count = 0
+			l_count = 0
+
 		self.stdout.write(self.style.SUCCESS(
-			f'🧹 Removed {removed_users} test users, {removed_patients} test patients, {removed_visits} test visits'
+			f'🧹 Removed {removed_users} test users, {removed_patients} test patients, {removed_visits} test visits, {p_count} prescriptions, {n_count} notes, {l_count} lab reports'
 		))
