@@ -46,7 +46,8 @@ INSTALLED_APPS = [
     "core",
     "patients",
     "emr",
-    "Finance"
+    "Finance",
+    "pharmacy"
 ]
 
 MIDDLEWARE = [
