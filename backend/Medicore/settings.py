@@ -146,7 +146,8 @@ STATICFILES_DIRS = [
 ] if (BASE_DIR.parent / 'frontend' / 'dist').exists() else []
 
 if not DEBUG:
-    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+    # Insert WhiteNoise after SecurityMiddleware to preserve security headers
+    MIDDLEWARE.insert(2, 'whitenoise.middleware.WhiteNoiseMiddleware')
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type

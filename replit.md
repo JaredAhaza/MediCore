@@ -122,11 +122,33 @@ The project is configured for Replit Autoscale deployment:
 - Serves both API and static frontend files
 
 ### Production Checklist
-- [ ] Update `SECRET_KEY` in production environment
-- [ ] Set `DEBUG=0` in production
-- [ ] Configure PostgreSQL database if needed
-- [ ] Set up proper domain and CORS settings
-- [ ] Configure proper `ALLOWED_HOSTS`
+**Critical Security Requirements:**
+- [ ] **Generate strong SECRET_KEY** (required - never use the dev key in production)
+- [ ] **Set DEBUG=0** (required - exposes sensitive data if True)
+- [ ] **Configure restrictive ALLOWED_HOSTS** (required - set to your domain, not "*")
+- [ ] **Configure restrictive CORS_ALLOWED_ORIGINS** (required - list allowed frontend domains)
+- [ ] **Set CORS_ALLOW_ALL_ORIGINS=0** (required - remove wildcard CORS in production)
+
+**Database & Infrastructure:**
+- [ ] Configure PostgreSQL database (recommended for production)
+- [ ] Set up database backups
+- [ ] Configure proper domain/SSL certificates
+- [ ] Test deployment build process locally
+
+**Environment Variables for Production:**
+```bash
+DEBUG=0
+SECRET_KEY=<strong-random-key-minimum-50-characters>
+USE_SQLITE=0  # Use PostgreSQL in production
+ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+CORS_ALLOWED_ORIGINS=https://yourdomain.com
+CORS_ALLOW_ALL_ORIGINS=0
+DB_NAME=your_production_db
+DB_USER=your_db_user
+DB_PASSWORD=your_secure_password
+DB_HOST=your_db_host
+DB_PORT=5432
+```
 
 ## Database
 
