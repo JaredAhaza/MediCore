@@ -45,7 +45,8 @@ INSTALLED_APPS = [
     "corsheaders",
     "core",
     "patients",
-    "emr"
+    "emr",
+    "Finance"
 ]
 
 MIDDLEWARE = [
