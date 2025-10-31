@@ -56,3 +56,8 @@ externalPort = 8000
 [[ports]]
 localPort = 39897
 externalPort = 3000
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--chdir=backend", "Medicore.wsgi:application"]
+build = ["bash", "-c", "cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"]
