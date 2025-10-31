@@ -24,6 +24,7 @@ MediCore is a comprehensive clinic management system built with Django REST Fram
 - `users` - Custom user model with role-based access (ADMIN, DOCTOR, LAB_TECH, PHARMACIST, FINANCE, PATIENT)
 - `patients` - Patient records and visit management
 - `emr` - Electronic Medical Records (prescriptions, treatment notes, lab reports)
+- `pharmacy` - Pharmacy inventory management with stock tracking and low-stock alerts
 - `Finance` - Invoicing and payment management
 - `core` - Management commands and shared utilities
 
@@ -63,6 +64,10 @@ CORS_ALLOW_ALL_ORIGINS=1
 - `/api/prescriptions/` - Prescription management
 - `/api/treatment-notes/` - Treatment notes
 - `/api/lab-reports/` - Lab report management
+- `/api/pharmacy/medicines/` - Medicine inventory CRUD
+- `/api/pharmacy/medicines/low_stock/` - Low stock alerts for dashboard
+- `/api/pharmacy/inventory-transactions/` - Stock in/out transactions
+- `/api/pharmacy/dispense/` - Dispense prescriptions to patients
 
 ## Development Setup
 
@@ -218,6 +223,7 @@ python manage.py clean_test_data
 │   ├── users/             # User authentication app
 │   ├── patients/          # Patient management app
 │   ├── emr/               # Electronic medical records app
+│   ├── pharmacy/          # Pharmacy inventory management app
 │   ├── Finance/           # Finance management app
 │   ├── core/              # Core utilities and commands
 │   ├── manage.py
@@ -241,6 +247,15 @@ python manage.py clean_test_data
 ```
 
 ## Recent Changes
+- **2025-10-31:** Pharmacy Inventory Management Module
+  - Created pharmacy Django app with Medicine, InventoryTransaction, and PrescriptionDispense models
+  - Implemented atomic stock tracking with race condition prevention using select_for_update() and F() expressions
+  - Added API endpoints for medicine CRUD, stock in/out, low stock alerts, and prescription dispensing
+  - Built comprehensive frontend views: PharmacyDashboard, MedicineList, MedicineForm, StockManagement, DispensePrescription
+  - Integrated pharmacy module with existing prescription system
+  - Added role-based permissions for ADMIN and PHARMACIST roles
+  - Configured pharmacy routes in Vue Router and updated navigation
+
 - **2025-10-31:** Initial Replit environment setup
   - Configured Django settings for Replit environment
   - Added SQLite/PostgreSQL database switching
