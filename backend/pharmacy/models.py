@@ -1,6 +1,8 @@
-from django.db import models
+from django.db import models, transaction as db_transaction
+from django.db.models import F
 from django.conf import settings
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 
@@ -62,7 +64,7 @@ class InventoryTransaction(models.Model):
     
     medicine = models.ForeignKey(Medicine, on_delete=models.CASCADE, related_name='transactions')
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
-    quantity = models.IntegerField(validators=[MinValueValidator(1)])
+    quantity = models.IntegerField()
     
     # Reference fields
     prescription = models.ForeignKey('emr.Prescription', on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_transactions')
@@ -82,21 +84,72 @@ class InventoryTransaction(models.Model):
     def __str__(self):
         return f"{self.transaction_type} - {self.medicine.name} ({self.quantity})"
     
+    def clean(self):
+        super().clean()
+        # Validate quantity based on transaction type
+        if self.transaction_type in ['STOCK_IN', 'STOCK_OUT', 'DISPENSED'] and self.quantity < 1:
+            raise ValidationError({'quantity': 'Quantity must be at least 1 for this transaction type.'})
+        
+        # Validate sufficient stock for STOCK_OUT and DISPENSED
+        if self.pk is None and self.transaction_type in ['STOCK_OUT', 'DISPENSED']:
+            if self.quantity > self.medicine.current_stock:
+                raise ValidationError({
+                    'quantity': f'Insufficient stock. Available: {self.medicine.current_stock}'
+                })
+    
     def save(self, *args, **kwargs):
         # Update medicine stock based on transaction type
         is_new = self.pk is None
-        super().save(*args, **kwargs)
         
-        if is_new:
-            if self.transaction_type == 'STOCK_IN':
-                self.medicine.current_stock += self.quantity
-            elif self.transaction_type in ['STOCK_OUT', 'DISPENSED']:
-                self.medicine.current_stock = max(0, self.medicine.current_stock - self.quantity)
-            elif self.transaction_type == 'ADJUSTMENT':
-                # For adjustments, quantity can be negative
-                self.medicine.current_stock = max(0, self.medicine.current_stock + self.quantity)
+        # Use atomic transaction to ensure data integrity
+        with db_transaction.atomic():
+            # Lock the medicine row to prevent concurrent updates
+            if is_new:
+                medicine = Medicine.objects.select_for_update().get(pk=self.medicine.pk)
             
-            self.medicine.save()
+            super().save(*args, **kwargs)
+            
+            if is_new:
+                # Use F() expressions for atomic database-level updates
+                if self.transaction_type == 'STOCK_IN':
+                    Medicine.objects.filter(pk=medicine.pk).update(
+                        current_stock=F('current_stock') + self.quantity
+                    )
+                elif self.transaction_type in ['STOCK_OUT', 'DISPENSED']:
+                    # Only update if sufficient stock exists
+                    updated = Medicine.objects.filter(
+                        pk=medicine.pk,
+                        current_stock__gte=self.quantity
+                    ).update(
+                        current_stock=F('current_stock') - self.quantity
+                    )
+                    if not updated:
+                        # Stock was insufficient - rollback will happen automatically
+                        medicine.refresh_from_db()
+                        raise ValidationError(
+                            f'Insufficient stock for {medicine.name}. Available: {medicine.current_stock}, Requested: {self.quantity}'
+                        )
+                elif self.transaction_type == 'ADJUSTMENT':
+                    # For adjustments, quantity can be negative
+                    if self.quantity >= 0:
+                        # Positive adjustment - just add
+                        Medicine.objects.filter(pk=medicine.pk).update(
+                            current_stock=F('current_stock') + self.quantity
+                        )
+                    else:
+                        # Negative adjustment - ensure we don't go below 0
+                        updated = Medicine.objects.filter(
+                            pk=medicine.pk,
+                            current_stock__gte=-self.quantity
+                        ).update(
+                            current_stock=F('current_stock') + self.quantity
+                        )
+                        if not updated:
+                            # Would result in negative stock - clamp to 0
+                            Medicine.objects.filter(pk=medicine.pk).update(current_stock=0)
+                
+                # Refresh the medicine instance to get updated values
+                self.medicine.refresh_from_db()
 
 
 class PrescriptionDispense(models.Model):
