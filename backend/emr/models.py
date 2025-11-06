@@ -17,24 +17,44 @@ class LabReport(models.Model):
     def __str__(self):
         return f"{self.report_type} - {self.patient.name} ({self.status})"
 
+
 class Prescription(models.Model):
-    patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='prescriptions')
-    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='prescriptions')
-    pharmacist = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='dispensed_prescriptions')
-    medication = models.CharField(max_length=200)
-    dosage = models.CharField(max_length=100)
-    duration = models.CharField(max_length=100)  # e.g., "7 days", "2 weeks"
-    instructions = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=[
+    STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('DISPENSED', 'Dispensed'),
-        ('COMPLETED', 'Completed')
-    ], default='PENDING')
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='emr_patient_prescriptions'  # changed
+    )
+    doctor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='emr_doctor_prescriptions'  # changed
+    )
+    medication = models.CharField(max_length=200)
+    dosage = models.CharField(max_length=100)
+    duration = models.CharField(max_length=100)
+    instructions = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    pharmacist = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='emr_pharmacist_prescriptions'  # changed
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.medication} - {self.patient.name} ({self.status})"
+        return f"{self.patient.username} - {self.medication} ({self.status})"
+
 
 class TreatmentNote(models.Model):
     patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='treatment_notes')

@@ -24,12 +24,12 @@ class Medicine(models.Model):
     manufacturer = models.CharField(max_length=200, blank=True)
     description = models.TextField(blank=True)
     
-    # Stock management
+    # Stock
     current_stock = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     reorder_level = models.IntegerField(default=10, validators=[MinValueValidator(0)])
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
     
-    # Metadata
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -65,16 +65,10 @@ class InventoryTransaction(models.Model):
     medicine = models.ForeignKey(Medicine, on_delete=models.CASCADE, related_name='transactions')
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     quantity = models.IntegerField()
-    
-    # Reference fields
     prescription = models.ForeignKey('emr.Prescription', on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_transactions')
-    
-    # Details
     notes = models.TextField(blank=True)
     batch_number = models.CharField(max_length=100, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
-    
-    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='inventory_transactions')
     
@@ -85,71 +79,65 @@ class InventoryTransaction(models.Model):
         return f"{self.transaction_type} - {self.medicine.name} ({self.quantity})"
     
     def clean(self):
-        super().clean()
-        # Validate quantity based on transaction type
         if self.transaction_type in ['STOCK_IN', 'STOCK_OUT', 'DISPENSED'] and self.quantity < 1:
             raise ValidationError({'quantity': 'Quantity must be at least 1 for this transaction type.'})
-        
-        # Validate sufficient stock for STOCK_OUT and DISPENSED
         if self.pk is None and self.transaction_type in ['STOCK_OUT', 'DISPENSED']:
             if self.quantity > self.medicine.current_stock:
-                raise ValidationError({
-                    'quantity': f'Insufficient stock. Available: {self.medicine.current_stock}'
-                })
+                raise ValidationError({'quantity': f'Insufficient stock. Available: {self.medicine.current_stock}'})
     
     def save(self, *args, **kwargs):
-        # Update medicine stock based on transaction type
         is_new = self.pk is None
-        
-        # Use atomic transaction to ensure data integrity
         with db_transaction.atomic():
-            # Lock the medicine row to prevent concurrent updates
             if is_new:
                 medicine = Medicine.objects.select_for_update().get(pk=self.medicine.pk)
-            
             super().save(*args, **kwargs)
-            
             if is_new:
-                # Use F() expressions for atomic database-level updates
                 if self.transaction_type == 'STOCK_IN':
-                    Medicine.objects.filter(pk=medicine.pk).update(
-                        current_stock=F('current_stock') + self.quantity
-                    )
+                    Medicine.objects.filter(pk=medicine.pk).update(current_stock=F('current_stock') + self.quantity)
                 elif self.transaction_type in ['STOCK_OUT', 'DISPENSED']:
-                    # Only update if sufficient stock exists
                     updated = Medicine.objects.filter(
                         pk=medicine.pk,
                         current_stock__gte=self.quantity
-                    ).update(
-                        current_stock=F('current_stock') - self.quantity
-                    )
+                    ).update(current_stock=F('current_stock') - self.quantity)
                     if not updated:
-                        # Stock was insufficient - rollback will happen automatically
-                        medicine.refresh_from_db()
-                        raise ValidationError(
-                            f'Insufficient stock for {medicine.name}. Available: {medicine.current_stock}, Requested: {self.quantity}'
-                        )
+                        raise ValidationError(f'Insufficient stock for {medicine.name}.')
                 elif self.transaction_type == 'ADJUSTMENT':
-                    # For adjustments, quantity can be negative
-                    if self.quantity >= 0:
-                        # Positive adjustment - just add
-                        Medicine.objects.filter(pk=medicine.pk).update(
-                            current_stock=F('current_stock') + self.quantity
-                        )
-                    else:
-                        # Negative adjustment - ensure we don't go below 0
-                        updated = Medicine.objects.filter(
-                            pk=medicine.pk,
-                            current_stock__gte=-self.quantity
-                        ).update(
-                            current_stock=F('current_stock') + self.quantity
-                        )
-                        if not updated:
-                            # Would result in negative stock - clamp to 0
-                            Medicine.objects.filter(pk=medicine.pk).update(current_stock=0)
-                
-                # Refresh the medicine instance to get updated values
-                self.medicine.refresh_from_db()
+                    Medicine.objects.filter(pk=medicine.pk).update(current_stock=F('current_stock') + self.quantity)
+                medicine.refresh_from_db()
+
+
+class Prescription(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('DISPENSED', 'Dispensed'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    patient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='prescriptions')
+    medication = models.CharField(max_length=200)
+    dosage = models.CharField(max_length=100)
+    duration = models.CharField(max_length=100)
+    instructions = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    pharmacist = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='handled_prescriptions')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.patient.username} - {self.medication} ({self.status})"
+
+    def mark_completed(self):
+        if self.status != 'DISPENSED':
+            raise ValidationError("Prescription must be dispensed before completion.")
+        self.status = 'COMPLETED'
+        self.save()
+
+    def reinitiate(self):
+        """Allows cancelled prescriptions to return to pending."""
+        if self.status != 'CANCELLED':
+            raise ValidationError("Only cancelled prescriptions can be reinitiated.")
+        self.status = 'PENDING'
+        self.save()
 
 
 class PrescriptionDispense(models.Model):
@@ -157,15 +145,12 @@ class PrescriptionDispense(models.Model):
     medicine = models.ForeignKey(Medicine, on_delete=models.PROTECT)
     quantity_dispensed = models.IntegerField(validators=[MinValueValidator(1)])
     pharmacist = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='dispensed_medicines')
-    
-    # Payment info (optional)
     amount_charged = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
-    
     notes = models.TextField(blank=True)
     dispensed_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['-dispensed_at']
     
     def __str__(self):
-        return f"Dispensed: {self.medicine.name} for {self.prescription.patient.name}"
+        return f"Dispensed: {self.medicine.name} for {self.prescription.patient.username}"

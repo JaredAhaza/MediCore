@@ -4,9 +4,21 @@
 			<h3>Patients</h3>
 			<input v-model="q" placeholder="Search by name or medical ID" @input="debouncedLoad" />
 		</div>
-		<div v-for="p in patients" :key="p.id" class="card">
-			<b>{{ p.name }}</b> — {{ p.medical_id }}
-			<div style="font-size:.9em; color:#666;">{{ p.gender }} • {{ p.dob }}</div>
+		<div v-for="p in patients" :key="p.id" class="card" style="display: flex; justify-content: space-between; align-items: center;">
+			<div style="flex: 1;">
+				<b>{{ p.name }}</b> — {{ p.medical_id }}
+				<div style="font-size:.9em; color:#666;">{{ p.gender }} • {{ p.dob }}</div>
+			</div>
+			<div style="text-align: right;">
+				<router-link 
+					:to="{ name: 'PrescriptionCreate', query: { patient_username: p.username } }" 
+					class="btn"
+					v-if="p.username"
+				>
+					Add Prescription
+				</router-link>
+				<span v-else style="color:#999; font-size:0.85em;">No username</span>
+			</div>
 		</div>
 	</div>
 </template>
@@ -30,3 +42,18 @@ function debouncedLoad() {
 }
 load();
 </script>
+
+<style scoped>
+.btn {
+	padding: 8px 16px;
+	background: #0984e3;
+	color: white;
+	text-decoration: none;
+	border-radius: 4px;
+	font-size: 0.9em;
+	display: inline-block;
+}
+.btn:hover {
+	background: #0652a3;
+}
+</style>

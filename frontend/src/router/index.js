@@ -12,6 +12,7 @@ import TreatmentNoteCreate from "../views/TreatmentNoteCreate.vue";
 import PharmacyDashboard from "../views/PharmacyDashboard.vue";
 import MedicineList from "../views/MedicineList.vue";
 import MedicineForm from "../views/MedicineForm.vue";
+import MedicineDetail from "@/views/MedicineDetail.vue";
 import StockManagement from "../views/StockManagement.vue";
 import DispensePrescription from "../views/DispensePrescription.vue";
 
@@ -31,6 +32,7 @@ const routes = [
     { path: "/pharmacy/medicines/:id", name: "MedicineEdit", component: MedicineForm, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
     { path: "/pharmacy/stock", name: "StockManagement", component: StockManagement, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
     { path: "/pharmacy/dispense", name: "DispensePrescription", component: DispensePrescription, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
+    { path: "/pharmacy/medicines/:id/details", name: "MedicineDetail", component: MedicineDetail, meta: { auth: true } },
 ];
 
 const router = createRouter({
@@ -39,17 +41,23 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
-        const auth = useAuthStore();
-        if (!auth.user && auth.access) {
-                await auth.fetchMe().catch(() => {});
-        }
-        if (to.meta?.auth && !auth.access) return { name: "Login", query: { next: to.fullPath } };
+    const auth = useAuthStore();
+  
+    if (!auth.access && localStorage.getItem("refresh")) {
+      await auth.refreshToken().catch(() => {});
+    }
+  
+    if (!auth.user && auth.access) {
+      await auth.fetchMe().catch(() => {});
+    }
+  
+    if (to.meta?.auth && !auth.access) return { name: "Login", query: { next: to.fullPath } };
     if (to.meta?.write && !auth.hasWriteRole()) return { name: "PatientsList" };
     if (to.meta?.role) {
-        const r = auth.user?.role;
-        if (!to.meta.role.includes(r)) return { name: "Landing" };
+      const r = auth.user?.role;
+      if (!to.meta.role.includes(r)) return { name: "Landing" };
     }
-        return true;
-});
+    return true;
+  });
 
 export default router;

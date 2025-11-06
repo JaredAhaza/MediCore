@@ -4,7 +4,7 @@
       <h3>Medicine Inventory</h3>
       <div style="display: flex; gap: 10px; margin-top: 10px;">
         <input v-model="search" placeholder="Search medicines..." @input="debouncedLoad" style="flex: 1;" />
-        <select v-model="category" @change="load" style="padding: 8px;">
+        <select v-model="category" style="padding: 8px;">
           <option value="">All Categories</option>
           <option value="TABLET">Tablet</option>
           <option value="CAPSULE">Capsule</option>
@@ -15,11 +15,15 @@
           <option value="INHALER">Inhaler</option>
           <option value="OTHER">Other</option>
         </select>
-        <router-link to="/pharmacy/medicines/new" class="btn">Add Medicine</router-link>
+        <button class="btn" @click="onPrimary" :disabled="loading">{{ primaryLabel }}</button>
+        <button v-if="category" class="btn btn-secondary" @click="clearFilters" :disabled="loading">Clear</button>
       </div>
+      <p v-if="error" style="color:#d63031; margin-top:8px;">{{ error }}</p>
     </div>
 
-    <div v-for="medicine in medicines" :key="medicine.id" class="card">
+    <div v-if="loading" class="card" style="text-align:center;">Loading...</div>
+
+    <div v-for="medicine in medicines" :key="medicine.id" class="card" v-show="!loading">
       <div style="display: flex; justify-content: space-between; align-items: start;">
         <div style="flex: 1;">
           <h4 style="margin: 0;">{{ medicine.name }}</h4>
@@ -46,39 +50,67 @@
             {{ medicine.stock_status.replace('_', ' ') }}
           </span>
           <div style="margin-top: 10px;">
-            <router-link :to="`/pharmacy/medicines/${medicine.id}`" class="link-btn">View Details</router-link>
+            <router-link :to="`/pharmacy/medicines/${medicine.id}/details`" class="link-btn">View Details</router-link>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="medicines.length === 0" class="card" style="text-align: center; color: #999;">
+    <div v-if="!loading && medicines.length === 0" class="card" style="text-align: center; color: #999;">
       No medicines found
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import { useRouter } from 'vue-router';
 import api from '../api/client';
+
+const router = useRouter();
 
 const search = ref('');
 const category = ref('');
 const medicines = ref([]);
+const loading = ref(false);
+const error = ref('');
 let timer;
 
-async function load() {
-  const params = {};
-  if (search.value) params.search = search.value;
-  if (category.value) params.category = category.value;
-  
-  const { data } = await api.get('/api/pharmacy/medicines/', { params });
-  medicines.value = data;
+async function load({ forceCategoryOnly = false } = {}) {
+  loading.value = true;
+  error.value = '';
+  try {
+    const params = {};
+    if (!forceCategoryOnly && search.value) params.search = search.value;
+    if (category.value) params.category = category.value;
+    const { data } = await api.get('/api/pharmacy/medicines/', { params });
+    medicines.value = data;
+  } catch (e) {
+    error.value = e.response?.data?.detail || 'Failed to load medicines';
+  } finally {
+    loading.value = false;
+  }
 }
 
 function debouncedLoad() {
   clearTimeout(timer);
-  timer = setTimeout(load, 300);
+  timer = setTimeout(() => load(), 300);
+}
+
+const primaryLabel = computed(() => (category.value ? 'Search' : 'Add Medicine'));
+
+async function onPrimary() {
+  if (category.value) {
+    await load({ forceCategoryOnly: true }); // strict category-only filter
+  } else {
+    router.push('/pharmacy/medicines/new');
+  }
+}
+
+function clearFilters() {
+  category.value = '';
+  search.value = '';
+  load();
 }
 
 function getStockBadgeStyle(status) {
@@ -90,6 +122,7 @@ function getStockBadgeStyle(status) {
   return styles[status] || '';
 }
 
+// initial load
 load();
 </script>
 
@@ -106,6 +139,10 @@ load();
 }
 .btn:hover {
   background: #0652a3;
+}
+.btn-secondary {
+  background: #636e72;
+  color: white;
 }
 .link-btn {
   padding: 6px 12px;

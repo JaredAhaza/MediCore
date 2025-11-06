@@ -40,12 +40,21 @@ export const useAuthStore = defineStore("auth", {
 		},
 		async fetchMe() {
 			try {
-				const { data } = await api.get("/api/auth/me/");
-				this.user = data;
-			} catch {
-				this.user = null;
+			  const { data } = await api.get("/api/auth/me/");
+			  this.user = data;
+			} catch (e) {
+			  if (e.response?.status === 401) {
+				const refreshed = await this.refreshToken();
+				if (refreshed) {
+				  const { data } = await api.get("/api/auth/me/");
+				  this.user = data;
+				  return;
+				}
+			  }
+			  this.user = null;
+			  throw e;
 			}
-		},
+		  },
 		logout() {
 			this.user = null; this.access = null; this.refresh = null;
 			localStorage.removeItem("access"); localStorage.removeItem("refresh");

@@ -197,8 +197,41 @@ async function dispense() {
       return;
     }
     
-    await api.post('/api/pharmacy/dispense/', dispenseForm.value);
-    
+    const { data: receipt } = await api.post('/api/pharmacy/dispense/', dispenseForm.value);
+
+    // Print-friendly receipt, includes patient username from API
+    const win = window.open('', '_blank', 'width=480,height=640');
+    const html = `
+      <html>
+        <head>
+          <title>Prescription Receipt</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 16px; }
+            h2 { margin-top: 0; }
+            .row { margin: 6px 0; }
+            .label { color: #555; }
+            .total { font-weight: bold; }
+            hr { margin: 12px 0; }
+            .muted { color: #777; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <h2>Prescription Receipt</h2>
+          <div class="row"><span class="label">Patient:</span> ${receipt.patient_name} (${receipt.patient_username || 'n/a'})</div>
+          <div class="row"><span class="label">Medicine:</span> ${receipt.medicine_name}</div>
+          <div class="row"><span class="label">Quantity:</span> ${receipt.quantity_dispensed}</div>
+          <div class="row total"><span class="label">Amount Charged:</span> $${receipt.amount_charged}</div>
+          <div class="row"><span class="label">Dispensed By:</span> ${receipt.pharmacist_name}</div>
+          <div class="row"><span class="label">Date/Time:</span> ${new Date(receipt.dispensed_at).toLocaleString()}</div>
+          ${receipt.notes ? `<hr /><div class="row"><span class="label">Notes:</span> ${receipt.notes}</div>` : ''}
+          <hr />
+          <div class="muted">Prescription #${receipt.prescription}</div>
+          <button onclick="window.print()">Print</button>
+        </body>
+      </html>`;
+    win.document.write(html);
+    win.document.close();
+
     alert('Prescription dispensed successfully!');
     cancelDispense();
     await Promise.all([loadPrescriptions(), loadMedicines(), loadRecentDispenses()]);
