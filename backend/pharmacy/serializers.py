@@ -1,12 +1,21 @@
+import re
+import logging
+from decimal import Decimal
+from django.db import transaction as db_transaction
 from rest_framework import serializers
 from .models import Medicine, InventoryTransaction, PrescriptionDispense
 from emr.models import Prescription
 
 
+# Setup logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
 class MedicineSerializer(serializers.ModelSerializer):
     stock_status = serializers.ReadOnlyField()
     is_low_stock = serializers.ReadOnlyField()
-    
+
     class Meta:
         model = Medicine
         fields = [
@@ -21,65 +30,109 @@ class MedicineSerializer(serializers.ModelSerializer):
 class InventoryTransactionSerializer(serializers.ModelSerializer):
     medicine_name = serializers.CharField(source='medicine.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
-    
+
     class Meta:
         model = InventoryTransaction
-        fields = [
-            'id', 'medicine', 'medicine_name', 'transaction_type', 'quantity',
-            'prescription', 'notes', 'batch_number', 'expiry_date',
-            'created_at', 'created_by', 'created_by_name'
-        ]
+        fields = '__all__'
         read_only_fields = ['created_at', 'created_by']
 
 
 class PrescriptionDispenseSerializer(serializers.ModelSerializer):
-    medicine_name = serializers.CharField(source='medicine.name', read_only=True)
-    patient_name = serializers.CharField(source='prescription.patient.name', read_only=True)
-    pharmacist_name = serializers.CharField(source='pharmacist.username', read_only=True)
-    prescription_details = serializers.SerializerMethodField()
-    
+    auto_calculated_quantity = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = PrescriptionDispense
         fields = [
-            'id', 'prescription', 'prescription_details', 'medicine', 'medicine_name',
-            'quantity_dispensed', 'pharmacist', 'pharmacist_name', 'patient_name',
-            'amount_charged', 'notes', 'dispensed_at'
+            'id', 'prescription', 'medicine', 'quantity_dispensed',
+            'auto_calculated_quantity', 'amount_charged',
+            'pharmacist', 'notes', 'dispensed_at'
         ]
-        read_only_fields = ['dispensed_at', 'pharmacist']
-    
-    def get_prescription_details(self, obj):
-        return {
-            'id': obj.prescription.id,
-            'medication': obj.prescription.medication,
-            'dosage': obj.prescription.dosage,
-            'duration': obj.prescription.duration,
-            'patient': obj.prescription.patient.name
-        }
-    
+        read_only_fields = ['dispensed_at', 'pharmacist', 'auto_calculated_quantity']
+
+    def _extract_number(self, text):
+        match = re.search(r'\d+', str(text))
+        return int(match.group()) if match else 1
+
+    def _calculate_total_quantity(self, prescription):
+        dosage_num = self._extract_number(prescription.dosage)
+        duration_num = self._extract_number(prescription.duration)
+
+        freq_match = re.search(r'(once|twice|thrice|\d+)', str(prescription.dosage).lower())
+        if freq_match:
+            freq_str = freq_match.group(1)
+            if freq_str == 'once':
+                freq = 1
+            elif freq_str == 'twice':
+                freq = 2
+            elif freq_str == 'thrice':
+                freq = 3
+            else:
+                freq = int(freq_str)
+        else:
+            freq = 1
+
+        return dosage_num * freq * duration_num
+
+    def validate(self, data):
+        prescription = data.get('prescription')
+        medicine = data.get('medicine')
+
+        if prescription.status != 'PENDING':
+            raise serializers.ValidationError(
+                f"Cannot dispense a prescription with status '{prescription.status}'."
+            )
+
+        total_qty = self._calculate_total_quantity(prescription)
+        data['auto_calculated_quantity'] = total_qty
+
+        if not medicine.is_active:
+            raise serializers.ValidationError("This medicine is inactive.")
+
+        if medicine.current_stock < total_qty:
+            raise serializers.ValidationError({
+                "medicine": f"Insufficient stock. Available: {medicine.current_stock}, Needed: {total_qty}"
+            })
+
+        if not data.get('quantity_dispensed'):
+            data['quantity_dispensed'] = total_qty
+
+        return data
+
+
     def create(self, validated_data):
-        # Set pharmacist to current user
-        validated_data['pharmacist'] = self.context['request'].user
-        
-        # Create dispense record
-        dispense = super().create(validated_data)
-        
-        # Create inventory transaction
-        InventoryTransaction.objects.create(
-            medicine=dispense.medicine,
-            transaction_type='DISPENSED',
-            quantity=dispense.quantity_dispensed,
-            prescription=dispense.prescription,
-            notes=f"Dispensed for prescription #{dispense.prescription.id}",
-            created_by=dispense.pharmacist
-        )
-        
-        # Update prescription status
-        prescription = dispense.prescription
-        prescription.status = 'DISPENSED'
-        prescription.pharmacist = dispense.pharmacist
-        prescription.save()
-        
+        request = self.context['request']
+        validated_data['pharmacist'] = request.user
+
+        with db_transaction.atomic():  # Ensure all operations are atomic
+            dispense = super().create(validated_data)
+            medicine = dispense.medicine
+            qty = dispense.quantity_dispensed
+
+            # Logging stock before dispensing
+            logger.info(f"[DISPENSE START] Prescription #{dispense.prescription.id} | Medicine: {medicine.name} | Quantity: {qty} | Current stock: {medicine.current_stock}")
+
+            # Create inventory transaction (automatically updates stock)
+            inv_trans = InventoryTransaction.objects.create(
+                medicine=medicine,
+                transaction_type='DISPENSED',
+                quantity=qty,
+                prescription=dispense.prescription,
+                notes=f"Dispensed for prescription #{dispense.prescription.id}",
+                created_by=request.user
+            )
+
+            # Refresh stock after transaction and log
+            medicine.refresh_from_db()
+            logger.info(f"[DISPENSE END] Updated stock for {medicine.name}: {medicine.current_stock} | Transaction ID: {inv_trans.id}")
+
+            # Update prescription status
+            prescription = dispense.prescription
+            prescription.status = 'DISPENSED'
+            prescription.pharmacist = request.user
+            prescription.save(update_fields=['status', 'pharmacist'])
+
         return dispense
+
 
 
 class LowStockAlertSerializer(serializers.Serializer):
