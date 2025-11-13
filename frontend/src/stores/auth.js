@@ -11,16 +11,29 @@ export const useAuthStore = defineStore("auth", {
 	}),
 	actions: {
 		async login(username, password) {
-			this.loading = true; this.error = null;
+			this.loading = true; 
+			this.error = null;
 			try {
+				console.log('Attempting login with:', { username, baseURL: import.meta.env.VITE_API_BASE });
 				const { data } = await api.post("/api/token/", { username, password });
-				this.access = data.access; this.refresh = data.refresh;
+				this.access = data.access; 
+				this.refresh = data.refresh;
 				localStorage.setItem("access", data.access);
 				localStorage.setItem("refresh", data.refresh);
 				await this.fetchMe();
 				return true;
 			} catch (e) {
-				this.error = "Invalid credentials";
+				console.error('Login error:', e.response?.data || e.message);
+				// Show more specific error message
+				if (e.response?.status === 400) {
+					this.error = e.response?.data?.detail || e.response?.data?.non_field_errors?.[0] || "Invalid username or password";
+				} else if (e.response?.status === 401) {
+					this.error = "Invalid credentials";
+				} else if (e.response?.status === 0 || !e.response) {
+					this.error = "Cannot connect to server. Please check your connection.";
+				} else {
+					this.error = e.response?.data?.detail || "Login failed. Please try again.";
+				}
 				return false;
 			} finally {
 				this.loading = false;
