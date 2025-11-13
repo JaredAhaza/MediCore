@@ -4,8 +4,8 @@ services:
     name: medicore-backend
     env: python
     plan: free
-    buildCommand: cd backend && ./build.sh
-    startCommand: cd backend && gunicorn Medicore.wsgi:application
+    buildCommand: cd backend && bash build.sh
+    startCommand: cd backend && gunicorn Medicore.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -37,17 +37,6 @@ services:
         fromDatabase:
           name: medicore-db
           property: port
-
-  # Frontend Vue.js
-  - type: web
-    name: medicore-frontend
-    env: static
-    plan: free
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: ./frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        value: https://medicore-backend.onrender.com
 
   # PostgreSQL Database
   - type: pserv

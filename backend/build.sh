@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# exit on error
-set -o errexit
+set -euo pipefail
 
+echo "[Render Build] Using Python: $(python --version)"
+
+echo "[Render Build] Installing backend dependencies"
 pip install -r requirements.txt
 
+echo "[Render Build] Running database migrations"
+python manage.py migrate --noinput
+
+echo "[Render Build] Collecting static files"
 python manage.py collectstatic --noinput
-python manage.py migrate
+
+echo "[Render Build] Done"
 
 
 
