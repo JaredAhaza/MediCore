@@ -248,10 +248,15 @@ async function loadFinance() {
   loading.value = true;
   error.value = "";
   try {
-    const [invRes, payRes] = await Promise.all([
+    const [invRes, payRes, transRes, medsRes, spentRes, profitRes] = await Promise.all([
       api.get('/api/invoices/'),
-      api.get('/api/payments/')
+      api.get('/api/payments/'),
+      api.get('/api/pharmacy/inventory-transactions/', { params: { transaction_type: 'STOCK_IN' } }),
+      api.get('/api/pharmacy/medicines', { params: { is_active: true } }),
+      api.get('/api/pharmacy/inventory-transactions/spend_summary/'),
+      api.get('/api/pharmacy/inventory-transactions/profit_summary/')
     ]);
+    
     const invoices = invRes.data || [];
     const payments = payRes.data || [];
     paymentsList.value = payments;
@@ -259,26 +264,33 @@ async function loadFinance() {
     pendingInvoices.value = invoices.filter(i => i.status === 'DUE').length;
     moneyPaid.value = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-    // Compute money spent from stock-in transactions (quantity * buying_price)
-    const [transRes, medsRes] = await Promise.all([
-      api.get('/api/pharmacy/inventory-transactions/', { params: { transaction_type: 'STOCK_IN' } }),
-      api.get('/api/pharmacy/medicines', { params: { is_active: true } })
-    ]);
+    // Get stock-in transactions for display
     const transactions = transRes.data || [];
     const meds = medsRes.data || [];
     stockInList.value = transactions;
+    
+    // Build buying price map for display purposes only
     for (const m of meds) buyingPriceMap.set(m.id, Number(m.buying_price || 0));
-    moneySpent.value = transactions.reduce((sum, t) => {
-      const price = buyingPriceMap.get(t.medicine) || 0;
-      const qty = Number(t.quantity || 0);
-      return sum + price * qty;
-    }, 0);
+    
+    // Use backend endpoint to calculate money spent (more accurate and consistent)
+    const spendData = spentRes.data || {};
+    moneySpent.value = Number(spendData.spent || 0);
 
-    // Gross profit from dispensed transactions
-    const profitRes = await api.get('/api/pharmacy/inventory-transactions/profit_summary/');
-    const ps = profitRes.data || {};
-    grossProfit.value = Number(ps.profit || 0);
+    // Gross profit from dispensed transactions (should NOT be added to moneySpent)
+    const profitData = profitRes.data || {};
+    grossProfit.value = Number(profitData.profit || 0);
+    
+    // Debug logging (remove in production)
+    console.log('Finance Data:', {
+      moneySpent: moneySpent.value,
+      grossProfit: grossProfit.value,
+      moneyPaid: moneyPaid.value,
+      transactionsCount: transactions.length,
+      spendData: spendData,
+      profitData: profitData
+    });
   } catch (e) {
+    console.error('Finance load error:', e);
     error.value = 'Failed to load finance data';
   } finally {
     loading.value = false;
