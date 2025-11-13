@@ -1,6 +1,5 @@
 {
   "buildCommand": "npm ci && npm run build",
   "outputDirectory": "dist",
-  "functions": {},
-  "ignoreCommand": "echo 'Use Vercel Project Settings for env vars'"
+  "ignoreCommand": "echo Use Vercel Project Settings for env vars"
 }
