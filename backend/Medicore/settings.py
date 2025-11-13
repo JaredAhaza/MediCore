@@ -28,7 +28,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+def parse_csv_env(name: str, default: str = ""):
+    raw = os.getenv(name, default)
+    # Split by comma, strip whitespace and any accidental wrapping quotes/backticks
+    return [item.strip().strip("'\"`") for item in raw.split(",") if item.strip()]
+
+ALLOWED_HOSTS = parse_csv_env("ALLOWED_HOSTS", "*")
 
 
 # Application definition
@@ -160,14 +165,14 @@ REST_FRAMEWORK = {
         ],
 }
 
-CORS_ALLOWED_ORIGINS = [o for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o]
+CORS_ALLOWED_ORIGINS = parse_csv_env("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0") == "1"
 CORS_ALLOW_CREDENTIALS = True
 
 # Optional: allow wildcard for preview deployments via regex patterns
 # Provide comma-separated regex patterns in env var CORS_ALLOWED_ORIGIN_REGEXES
 # Example: ^https://.*\.vercel\.app$
-CORS_ALLOWED_ORIGIN_REGEXES = [r for r in os.getenv("CORS_ALLOWED_ORIGIN_REGEXES", "").split(",") if r]
+CORS_ALLOWED_ORIGIN_REGEXES = parse_csv_env("CORS_ALLOWED_ORIGIN_REGEXES", "")
 
 
 LOGGING = {
