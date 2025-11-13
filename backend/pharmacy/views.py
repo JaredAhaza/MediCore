@@ -155,6 +155,91 @@ class InventoryTransactionViewSet(viewsets.ModelViewSet):
             'count': qs.count(),
         })
 
+    @action(detail=False, methods=['get'])
+    def spend_summary(self, request):
+        """Total money spent acquiring stock: sum(quantity * buying_price) for STOCK_IN.
+        Optional filters: start (YYYY-MM-DD), end (YYYY-MM-DD), medicine, pharmacist.
+        """
+        qs = InventoryTransaction.objects.filter(transaction_type='STOCK_IN')
+
+        start = request.query_params.get('start')
+        end = request.query_params.get('end')
+        medicine = request.query_params.get('medicine')
+        pharmacist = request.query_params.get('pharmacist')
+
+        if start:
+            qs = qs.filter(created_at__date__gte=start)
+        if end:
+            qs = qs.filter(created_at__date__lte=end)
+        if medicine:
+            qs = qs.filter(medicine_id=medicine)
+        if pharmacist:
+            qs = qs.filter(created_by_id=pharmacist)
+
+        spent_expr = ExpressionWrapper(
+            F('quantity') * F('medicine__buying_price'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        )
+        agg = qs.aggregate(spent=Sum(spent_expr))
+        spent = agg.get('spent') or 0
+
+        return Response({
+            'spent': str(spent),
+            'count': qs.count(),
+        })
+
+    @action(detail=False, methods=['get'])
+    def finance_overview(self, request):
+        """Combined overview: revenue, cost of goods sold (COGS), profit, and money spent on stock.
+        Uses DISPENSED transactions for revenue/COGS and STOCK_IN for spend.
+        Optional filters: start (YYYY-MM-DD), end (YYYY-MM-DD), medicine, pharmacist.
+        """
+        start = request.query_params.get('start')
+        end = request.query_params.get('end')
+        medicine = request.query_params.get('medicine')
+        pharmacist = request.query_params.get('pharmacist')
+
+        dispensed = InventoryTransaction.objects.filter(transaction_type='DISPENSED')
+        stock_in = InventoryTransaction.objects.filter(transaction_type='STOCK_IN')
+
+        for qs in (dispensed, stock_in):
+            if start:
+                qs = qs.filter(created_at__date__gte=start)
+            if end:
+                qs = qs.filter(created_at__date__lte=end)
+            if medicine:
+                qs = qs.filter(medicine_id=medicine)
+            if pharmacist:
+                qs = qs.filter(created_by_id=pharmacist)
+
+        revenue_expr = ExpressionWrapper(
+            F('quantity') * F('medicine__selling_price'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        )
+        cogs_expr = ExpressionWrapper(
+            F('quantity') * F('medicine__buying_price'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        )
+        spent_expr = cogs_expr
+
+        rev_agg = dispensed.aggregate(revenue=Sum(revenue_expr))
+        cogs_agg = dispensed.aggregate(cogs=Sum(cogs_expr))
+        spent_agg = stock_in.aggregate(spent=Sum(spent_expr))
+
+        revenue = rev_agg.get('revenue') or 0
+        cogs = cogs_agg.get('cogs') or 0
+        profit = revenue - cogs
+        spent = spent_agg.get('spent') or 0
+
+        return Response({
+            'revenue': str(revenue),
+            'cogs': str(cogs),
+            'profit': str(profit),
+            'spent': str(spent),
+            'dispensed_count': dispensed.count(),
+            'stock_in_count': stock_in.count(),
+        })
+
     @action(detail=False, methods=['post'], url_path='stock_in')
     def stock_in(self, request):
         """Create a STOCK_IN transaction for a given medicine.
