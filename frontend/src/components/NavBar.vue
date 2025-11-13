@@ -6,6 +6,7 @@
                         <RouterLink to="/patients/new" v-if="auth.access && auth.hasWriteRole()">New Patient</RouterLink>
                         <RouterLink to="/emr/treatment-notes" v-if="auth.access">Treatment Notes</RouterLink>
                         <RouterLink to="/pharmacy" v-if="auth.access">Pharmacy</RouterLink>
+                        <RouterLink to="/finance" v-if="auth.access && ['ADMIN','FINANCE'].includes(auth.user?.role)">Finance</RouterLink>
                         <span style="margin-left:auto;"></span>
                         <RouterLink to="/me" v-if="auth.access">{{ auth.user?.username }}</RouterLink>
                         <button v-if="auth.access" @click="logout">Logout</button>

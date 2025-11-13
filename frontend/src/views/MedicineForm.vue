@@ -29,10 +29,7 @@
             </select>
           </div>
 
-          <div v-if="!isEdit">
-            <label>Initial Quantity</label>
-            <input v-model.number="form.initial_quantity" type="number" min="0" placeholder="e.g. 100" />
-          </div>
+          <!-- Quantity removed; stock adjustments handled in Stock Management -->
 
           <div>
             <label>Manufacturer</label>
@@ -50,8 +47,12 @@
           </div>
 
           <div>
-            <label>Unit Price ($) *</label>
-            <input v-model.number="form.unit_price" type="number" step="0.01" min="0" required placeholder="e.g. 5.00" />
+            <label>Buying Price (Kshs) *</label>
+            <input v-model.number="form.buying_price" type="number" step="0.01" min="0" required placeholder="e.g. 5.00" />
+          </div>
+          <div>
+            <label>Selling Price (Kshs)</label>
+            <input v-model.number="form.selling_price" type="number" step="0.01" min="0" placeholder="e.g. 8.00" />
           </div>
 
           <div v-if="isEdit">
@@ -93,9 +94,9 @@ const form = ref({
   manufacturer: '',
   description: '',
   reorder_level: 10,
-  unit_price: 0,
+  buying_price: 0,
+  selling_price: 0,
   is_active: true,
-  initial_quantity: 0,
 });
 
 // Autosave draft per-route
@@ -115,22 +116,14 @@ async function save() {
         manufacturer: form.value.manufacturer,
         description: form.value.description,
         reorder_level: form.value.reorder_level,
-        unit_price: form.value.unit_price,
+        buying_price: form.value.buying_price,
+        selling_price: form.value.selling_price,
         is_active: form.value.is_active,
       });
     } else {
       // Create new medicine
-      const { initial_quantity, ...payload } = form.value;
-      const { data: med } = await api.post('/api/pharmacy/medicines/', payload);
-
-      // Handle initial stock via standard InventoryTransaction
-      if (initial_quantity && initial_quantity > 0) {
-        await api.post('/api/pharmacy/inventory-transactions/', {
-          medicine: med.id,
-          quantity: initial_quantity,
-          transaction_type: 'STOCK_IN',
-        });
-      }
+      const payload = { ...form.value };
+      await api.post('/api/pharmacy/medicines/', payload);
     }
 
     clearDraft();
@@ -144,7 +137,8 @@ onMounted(async () => {
   if (route.params.id) {
     isEdit.value = true;
     const { data } = await api.get(`/api/pharmacy/medicines/${route.params.id}/`);
-    form.value = { ...data, initial_quantity: 0, ...form.value };
+    // Auto-fill with existing details; allow edits
+    form.value = { ...form.value, ...data };
   }
 });
 </script>

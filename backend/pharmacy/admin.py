@@ -4,7 +4,7 @@ from .models import Medicine, InventoryTransaction, PrescriptionDispense
 
 @admin.register(Medicine)
 class MedicineAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'current_stock', 'reorder_level', 'stock_status', 'unit_price', 'is_active']
+    list_display = ['name', 'category', 'current_stock', 'reorder_level', 'stock_status', 'buying_price', 'selling_price', 'is_active']
     list_filter = ['category', 'is_active', 'created_at']
     search_fields = ['name', 'generic_name', 'manufacturer']
     readonly_fields = ['current_stock', 'created_at', 'updated_at']
@@ -13,7 +13,7 @@ class MedicineAdmin(admin.ModelAdmin):
             'fields': ('name', 'generic_name', 'category', 'manufacturer', 'description')
         }),
         ('Stock Management', {
-            'fields': ('current_stock', 'reorder_level', 'unit_price', 'is_active')
+            'fields': ('current_stock', 'reorder_level', 'buying_price', 'selling_price', 'is_active')
         }),
         ('Metadata', {
             'fields': ('created_by', 'created_at', 'updated_at')

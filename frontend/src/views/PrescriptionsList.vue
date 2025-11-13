@@ -28,12 +28,12 @@
 				</div>
 
 				<div v-if="canDispense">
-					<select v-model="statuses[p.id]">
-						<option value="PENDING">PENDING</option>
-						<option value="DISPENSED">DISPENSED</option>
-						<option value="CANCELLED">CANCELLED</option>
-					</select>
-					<button @click="updateStatus(p.id)">Update</button>
+					<RouterLink
+						:to="{ name: 'DispenseMedicineDetails', params: { prescriptionId: p.id } }"
+						class="btn"
+					>
+						Dispense
+					</RouterLink>
 				</div>
 			</div>
 		</div>
@@ -76,14 +76,15 @@
 
 <script setup>
 import { ref, computed } from "vue";
+import { useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { RouterLink } from "vue-router";
 import api from "../api/client";
 
 const auth = useAuthStore();
+const route = useRoute();
 const q = ref("");
 const items = ref([]);
-const statuses = ref({});
 
 const canCreate = ["ADMIN", "DOCTOR"].includes(auth.user?.role);
 const canDispense = ["ADMIN", "PHARMACIST", "DOCTOR"].includes(auth.user?.role);
@@ -103,7 +104,6 @@ async function load() {
 	if (q.value) params.search = q.value;
 	const { data } = await api.get("/api/prescriptions/", { params });
 	items.value = data;
-	for (const p of data) statuses.value[p.id] = p.status;
 }
 
 let timer;
@@ -112,15 +112,6 @@ function debouncedLoad() {
 	timer = setTimeout(load, 250);
 }
 
-async function updateStatus(id) {
-	const newStatus = statuses.value[id];
-	try {
-		await api.patch(`/api/prescriptions/${id}/`, { status: newStatus });
-		await load();
-	} catch (e) {
-		alert("Failed to update status");
-	}
-}
 
 async function reinstatePrescription(id) {
 	try {
@@ -129,6 +120,11 @@ async function reinstatePrescription(id) {
 	} catch (e) {
 		alert("Failed to re-initiate prescription");
 	}
+}
+
+// Seed the search box from patient query (coming from PatientsList "View Prescription")
+if (route.query && route.query.patient) {
+    q.value = String(route.query.patient);
 }
 
 load();

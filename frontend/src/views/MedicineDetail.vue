@@ -8,7 +8,8 @@
   
         <div class="grid">
           <div><b>Manufacturer:</b> {{ medicine.manufacturer || '—' }}</div>
-          <div><b>Unit Price:</b> ${{ medicine.unit_price }}</div>
+          <div><b>Buying Price:</b> Kshs {{ medicine.buying_price }}</div>
+          <div><b>Selling Price:</b> Kshs {{ medicine.selling_price }}</div>
           <div><b>Current Stock:</b> {{ medicine.current_stock }}</div>
           <div><b>Reorder Level:</b> {{ medicine.reorder_level }}</div>
           <div><b>Status:</b> {{ medicine.stock_status.replace('_', ' ') }}</div>

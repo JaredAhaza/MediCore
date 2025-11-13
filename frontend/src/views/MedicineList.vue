@@ -40,8 +40,11 @@
             <span style="padding: 5px 10px; background: #f1f3f5; border-radius: 4px; font-size: 0.9em; margin-right: 10px;">
               Reorder: {{ medicine.reorder_level }}
             </span>
+            <span style="padding: 5px 10px; background: #f1f3f5; border-radius: 4px; font-size: 0.9em; margin-right:10px;">
+              Buying: Kshs {{ medicine.buying_price }}
+            </span>
             <span style="padding: 5px 10px; background: #f1f3f5; border-radius: 4px; font-size: 0.9em;">
-              Price: ${{ medicine.unit_price }}
+              Selling: Kshs {{ medicine.selling_price }}
             </span>
           </div>
         </div>

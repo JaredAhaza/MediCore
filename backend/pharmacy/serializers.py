@@ -5,6 +5,7 @@ from django.db import transaction as db_transaction
 from rest_framework import serializers
 from .models import Medicine, InventoryTransaction, PrescriptionDispense
 from emr.models import Prescription
+from Finance.models import Invoice
 
 
 # Setup logger
@@ -15,16 +16,45 @@ logging.basicConfig(level=logging.INFO)
 class MedicineSerializer(serializers.ModelSerializer):
     stock_status = serializers.ReadOnlyField()
     is_low_stock = serializers.ReadOnlyField()
+    # Reintroduce initial quantity for creation (write-only)
+    quantity = serializers.IntegerField(write_only=True, required=False, min_value=0)
 
     class Meta:
         model = Medicine
         fields = [
             'id', 'name', 'generic_name', 'category', 'manufacturer',
-            'description', 'current_stock', 'reorder_level', 'unit_price',
+            'description', 'current_stock', 'reorder_level', 'buying_price', 'selling_price',
+            'quantity',
             'is_active', 'stock_status', 'is_low_stock',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'current_stock']
+
+    def create(self, validated_data):
+        # Accept optional initial quantity on creation
+        request = self.context.get('request')
+        quantity = validated_data.pop('quantity', None)
+        if quantity is not None:
+            # Set initial current_stock from quantity
+            validated_data['current_stock'] = quantity
+
+        medicine = super().create(validated_data)
+
+        # Create an initial stock transaction for audit trail
+        try:
+            if quantity and quantity > 0:
+                InventoryTransaction.objects.create(
+                    medicine=medicine,
+                    transaction_type='STOCK_IN',
+                    quantity=quantity,
+                    notes='Initial stock on medicine creation',
+                    created_by=(request.user if request else None)
+                )
+        except Exception:
+            # Do not block medicine creation if transaction logging fails
+            logger.exception("Failed to create initial STOCK_IN transaction for new medicine")
+
+        return medicine
 
 
 class InventoryTransactionSerializer(serializers.ModelSerializer):
@@ -38,16 +68,18 @@ class InventoryTransactionSerializer(serializers.ModelSerializer):
 
 
 class PrescriptionDispenseSerializer(serializers.ModelSerializer):
-    auto_calculated_quantity = serializers.IntegerField(read_only=True)
+    auto_calculated_quantity = serializers.SerializerMethodField(read_only=True)
+    medicine_current_stock = serializers.SerializerMethodField(read_only=True)
+    medicine_name = serializers.CharField(source='medicine.name', read_only=True)
 
     class Meta:
         model = PrescriptionDispense
         fields = [
-            'id', 'prescription', 'medicine', 'quantity_dispensed',
+            'id', 'prescription', 'medicine', 'medicine_name', 'quantity_dispensed',
             'auto_calculated_quantity', 'amount_charged',
-            'pharmacist', 'notes', 'dispensed_at'
+            'pharmacist', 'notes', 'dispensed_at', 'medicine_current_stock'
         ]
-        read_only_fields = ['dispensed_at', 'pharmacist', 'auto_calculated_quantity']
+        read_only_fields = ['dispensed_at', 'pharmacist', 'auto_calculated_quantity', 'medicine_current_stock', 'medicine_name']
 
     def _extract_number(self, text):
         match = re.search(r'\d+', str(text))
@@ -82,19 +114,41 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
                 f"Cannot dispense a prescription with status '{prescription.status}'."
             )
 
-        total_qty = self._calculate_total_quantity(prescription)
-        data['auto_calculated_quantity'] = total_qty
+        # Finance gating: require a PAID invoice linked to this prescription
+        has_paid_invoice = Invoice.objects.filter(prescription=prescription, status='PAID').exists()
+        if not has_paid_invoice:
+            raise serializers.ValidationError({
+                'prescription': 'Payment not approved. Dispensing requires a PAID invoice.'
+            })
+
+        # Category-based quantity logic
+        requires_calc = medicine.category in {'TABLET', 'CAPSULE'}
+        if requires_calc:
+            total_qty = self._calculate_total_quantity(prescription)
+        else:
+            total_qty = None
 
         if not medicine.is_active:
             raise serializers.ValidationError("This medicine is inactive.")
 
-        if medicine.current_stock < total_qty:
-            raise serializers.ValidationError({
-                "medicine": f"Insufficient stock. Available: {medicine.current_stock}, Needed: {total_qty}"
-            })
-
-        if not data.get('quantity_dispensed'):
-            data['quantity_dispensed'] = total_qty
+        # Stock checks
+        requested_qty = data.get('quantity_dispensed')
+        if requires_calc:
+            total_qty = total_qty or 1
+            if medicine.current_stock < total_qty:
+                raise serializers.ValidationError({
+                    "medicine": f"Insufficient stock. Available: {medicine.current_stock}, Needed: {total_qty}"
+                })
+            if not requested_qty:
+                data['quantity_dispensed'] = total_qty
+        else:
+            # For unit-sale categories, require quantity and validate against stock
+            if not requested_qty or requested_qty < 1:
+                raise serializers.ValidationError({'quantity_dispensed': 'Quantity is required for this medicine category.'})
+            if medicine.current_stock < requested_qty:
+                raise serializers.ValidationError({
+                    "medicine": f"Insufficient stock. Available: {medicine.current_stock}, Needed: {requested_qty}"
+                })
 
         return data
 
@@ -102,6 +156,8 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context['request']
         validated_data['pharmacist'] = request.user
+        # Remove any serializer-only fields that may have been set in validation
+        validated_data.pop('auto_calculated_quantity', None)
 
         with db_transaction.atomic():  # Ensure all operations are atomic
             dispense = super().create(validated_data)
@@ -132,6 +188,22 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
             prescription.save(update_fields=['status', 'pharmacist'])
 
         return dispense
+
+    def get_auto_calculated_quantity(self, obj):
+        try:
+            med = obj.medicine
+            presc = obj.prescription
+            if med.category in {'TABLET', 'CAPSULE'}:
+                return self._calculate_total_quantity(presc)
+            return None
+        except Exception:
+            return None
+
+    def get_medicine_current_stock(self, obj):
+        try:
+            return obj.medicine.current_stock
+        except Exception:
+            return None
 
 
 

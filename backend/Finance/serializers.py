@@ -6,7 +6,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 	patient_detail = PatientSerializer(source='patient', read_only=True)
 	class Meta:
 		model = Invoice
-		fields = ['id','patient','patient_detail','created_by','services','subtotal','discount','total','status','created_at','updated_at']
+		fields = ['id','patient','patient_detail','prescription','created_by','services','subtotal','discount','total','status','created_at','updated_at']
 		read_only_fields = ['created_by','subtotal','total','created_at','updated_at']
 
 	def create(self, validated_data):

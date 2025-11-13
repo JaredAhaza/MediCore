@@ -50,7 +50,7 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             else:
                 raise serializers.ValidationError({'patient_username': 'Patient username is required'})
 
-            # Optional medication validation
+            # Validate medication and enforce category-specific fields
             try:
                 from pharmacy.models import Medicine
                 med_name = attrs.get('medication')
@@ -58,6 +58,14 @@ class PrescriptionSerializer(serializers.ModelSerializer):
                     med = Medicine.objects.get(name=med_name, is_active=True)
                     if med.current_stock <= 0:
                         raise serializers.ValidationError({'medication': 'This medicine is out of stock.'})
+                    # Enforce dosage and duration for specific categories
+                    requires_dd = med.category in {'TABLET','CAPSULE','SYRUP','DROPS','INJECTION'}
+                    if requires_dd:
+                        if not attrs.get('dosage'):
+                            raise serializers.ValidationError({'dosage': 'Dosage is required for this medicine category.'})
+                        if not attrs.get('duration'):
+                            raise serializers.ValidationError({'duration': 'Duration is required for this medicine category.'})
+                    # For categories that might not require dosage/duration, allow blanks
             except ImportError:
                 pass
             except Medicine.DoesNotExist:

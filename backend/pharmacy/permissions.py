@@ -12,3 +12,9 @@ class IsPharmacyStaff(permissions.BasePermission):
 class CanDispensePrescription(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.role in ['ADMIN', 'PHARMACIST']
+
+
+class CanImportInvoices(permissions.BasePermission):
+    def has_permission(self, request, view):
+        """Allow admins, pharmacists, and finance users to import/apply vendor invoices."""
+        return request.user and request.user.is_authenticated and request.user.role in ['ADMIN', 'PHARMACIST', 'FINANCE']

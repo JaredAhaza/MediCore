@@ -15,6 +15,8 @@ import MedicineForm from "../views/MedicineForm.vue";
 import MedicineDetail from "@/views/MedicineDetail.vue";
 import StockManagement from "../views/StockManagement.vue";
 import DispensePrescription from "../views/DispensePrescription.vue";
+import DispenseMedicineDetails from "../views/DispenseMedicineDetails.vue";
+import FinanceDashboard from "../views/FinanceDashboard.vue";
 
 const routes = [
     { path: "/", name: "Landing", component: Landing },
@@ -32,7 +34,9 @@ const routes = [
     { path: "/pharmacy/medicines/:id", name: "MedicineEdit", component: MedicineForm, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
     { path: "/pharmacy/stock", name: "StockManagement", component: StockManagement, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
     { path: "/pharmacy/dispense", name: "DispensePrescription", component: DispensePrescription, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
+    { path: "/pharmacy/dispense/:prescriptionId", name: "DispenseMedicineDetails", component: DispenseMedicineDetails, meta: { auth: true, role: ["ADMIN","PHARMACIST"] } },
     { path: "/pharmacy/medicines/:id/details", name: "MedicineDetail", component: MedicineDetail, meta: { auth: true } },
+    { path: "/finance", name: "FinanceDashboard", component: FinanceDashboard, meta: { auth: true, role: ["ADMIN","FINANCE"] } },
 ];
 
 const router = createRouter({
