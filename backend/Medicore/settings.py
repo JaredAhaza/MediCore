@@ -164,6 +164,11 @@ CORS_ALLOWED_ORIGINS = [o for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split("
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0") == "1"
 CORS_ALLOW_CREDENTIALS = True
 
+# Optional: allow wildcard for preview deployments via regex patterns
+# Provide comma-separated regex patterns in env var CORS_ALLOWED_ORIGIN_REGEXES
+# Example: ^https://.*\.vercel\.app$
+CORS_ALLOWED_ORIGIN_REGEXES = [r for r in os.getenv("CORS_ALLOWED_ORIGIN_REGEXES", "").split(",") if r]
+
 
 LOGGING = {
     'version': 1,
