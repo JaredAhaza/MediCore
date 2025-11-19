@@ -30,14 +30,36 @@ async function voiceInsights() {
   }
   speaking.value = true;
   try {
-    // Fetch a couple of metrics to narrate
-    const [lowStockRes, profitRes] = await Promise.all([
+    const [lowStockRes, profitRes, reportRes, invoicesRes] = await Promise.all([
       client.get('/api/pharmacy/medicines/low_stock/'),
-      client.get('/api/pharmacy/inventory-transactions/profit_summary/')
+      client.get('/api/pharmacy/inventory-transactions/profit_summary/'),
+      client.get('/api/finance/reports/financial-position/'),
+      client.get('/api/invoices/')
     ]);
     const lowCount = Array.isArray(lowStockRes.data) ? lowStockRes.data.length : 0;
-    const profit = profitRes?.data?.profit ?? '0.00';
-    const text = `Finance insights: Gross profit is ${profit}. There are ${lowCount} medicine items at or below reorder levels.`;
+    const profit = Number(profitRes?.data?.profit ?? 0).toFixed(2);
+    const report = reportRes?.data || {};
+    const totals = report.totals || {};
+    const breakdown = report.breakdown || {};
+    const period = report.period || {};
+    const pendingInvoices = (invoicesRes?.data || []).filter(inv => inv.status === 'DUE').length;
+
+    const formatMoney = (val) => Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const topRevenue = breakdown.revenue_by_category?.[0];
+    const topExpense = breakdown.expenses_by_category?.[0];
+
+    const narrativeParts = [
+      `Finance insights for the period ${period.start_date || 'start of month'} to ${period.end_date || 'today'}.`,
+      `Net position stands at ${formatMoney(totals.net_position)} shillings with revenue ${formatMoney(totals.revenue)} and expenses ${formatMoney(totals.expenses)}.`,
+      `Cash collected is ${formatMoney(totals.cash_collected)} and accounts receivable are ${formatMoney(totals.accounts_receivable)} with ${pendingInvoices} invoices still pending payment.`,
+      `Gross profit from dispensing activity is ${formatMoney(profit)}.`,
+      topRevenue ? `Top revenue source is ${topRevenue.category} contributing ${formatMoney(topRevenue.total)}.` : '',
+      topExpense ? `Largest expense category is ${topExpense.category} at ${formatMoney(topExpense.total)}.` : '',
+      `There are ${lowCount} medicines at or below reorder levels, consider restocking soon.`
+    ].filter(Boolean);
+
+    const text = narrativeParts.join(' ');
 
     // Call ElevenLabs TTS
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;

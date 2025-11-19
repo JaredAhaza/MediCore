@@ -147,6 +147,9 @@ class PrescriptionDispense(models.Model):
     quantity_dispensed = models.IntegerField(validators=[MinValueValidator(1)])
     pharmacist = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='dispensed_medicines')
     amount_charged = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))])
+    additional_charges = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))])
+    additional_charges_note = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True)
     dispensed_at = models.DateTimeField(auto_now_add=True)
 
@@ -155,3 +158,7 @@ class PrescriptionDispense(models.Model):
     
     def __str__(self):
         return f"Dispensed: {self.medicine.name} for {self.prescription.patient.username}"
+
+    @property
+    def final_amount(self):
+        return (self.amount_charged or Decimal('0.00')) - (self.discount_amount or Decimal('0.00')) + (self.additional_charges or Decimal('0.00'))

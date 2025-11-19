@@ -37,6 +37,26 @@
             <label>Amount to Charge (Kshs)</label>
             <input type="number" :value="form.amount_charged" disabled />
           </div>
+          <div class="grid-two">
+            <div>
+              <label>Discount (Kshs)</label>
+              <input type="number" v-model.number="form.discount_amount" min="0" step="0.01" :disabled="loading" />
+            </div>
+            <div>
+              <label>Additional Charges (Kshs)</label>
+              <input type="number" v-model.number="form.additional_charges" min="0" step="0.01" :disabled="loading" />
+            </div>
+          </div>
+
+          <div v-if="Number(form.additional_charges) > 0">
+            <label>Additional Charge Note</label>
+            <input type="text" v-model.trim="form.additional_note" maxlength="120" placeholder="e.g. Packaging costs" :disabled="loading" />
+          </div>
+
+          <div class="info-box total-box">
+            <div><strong>Final Amount:</strong> Kshs {{ formatMoney(finalAmount) }}</div>
+            <small>Final = Amount charged - Discount + Additional charges</small>
+          </div>
           <div>
             <label>Notes</label>
             <textarea v-model="form.notes" rows="3" placeholder="Optional notes"></textarea>
@@ -90,8 +110,24 @@ const form = ref({
   medicine: '',
   quantity_dispensed: 1,
   amount_charged: 0,
+  discount_amount: 0,
+  additional_charges: 0,
+  additional_note: '',
   notes: ''
 });
+
+const finalAmount = computed(() => {
+  const base = Number(form.value.amount_charged || 0);
+  const discount = Number(form.value.discount_amount || 0);
+  const extra = Number(form.value.additional_charges || 0);
+  const net = base - discount + extra;
+  return net > 0 ? Number(net.toFixed(2)) : 0;
+});
+
+function formatMoney(val) {
+  const num = Number(val || 0);
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function badge(status) {
   const styles = {
@@ -146,7 +182,10 @@ function onMedicineSelect() {
   const requiresCalc = ['TABLET', 'CAPSULE'].includes(med.category);
   const qty = requiresCalc ? calculateTotalQuantity(prescription.value) : 1;
   form.value.quantity_dispensed = qty;
-  form.value.amount_charged = Number((med.selling_price || 0) * qty).toFixed(2);
+  form.value.amount_charged = Number(((med.selling_price || 0) * qty).toFixed(2));
+  form.value.discount_amount = 0;
+  form.value.additional_charges = 0;
+  form.value.additional_note = '';
   locked.value = true; // lock after auto-fill
 }
 
@@ -159,7 +198,10 @@ async function generateInvoice() {
     const { data } = await api.post('/api/invoices/create_for_prescription/', {
       prescription: prescriptionId,
       medicine: selectedMedicine.value.id,
-      quantity
+      quantity,
+      discount: form.value.discount_amount,
+      additional_charges: form.value.additional_charges,
+      additional_label: form.value.additional_note
     });
     currentInvoice.value = data;
     // Show invoice receipt with details
@@ -193,7 +235,7 @@ async function recordPayment() {
     if (!currentInvoice.value) { error.value = 'No invoice found'; return; }
     const payload = {
       invoice: currentInvoice.value.id,
-      amount: currentInvoice.value.total,
+      amount: currentInvoice.value?.total ?? finalAmount.value,
       method: 'CASH',
       reference: `RCPT-${currentInvoice.value.id}`
     };
@@ -214,14 +256,38 @@ async function completeDispense() {
     error.value = '';
     if (!selectedMedicine.value) { error.value = 'Select a medicine first'; return; }
     if (!currentInvoice.value || currentInvoice.value.status !== 'PAID') { error.value = 'Payment not approved. Requires PAID invoice.'; return; }
+    if (finalAmount.value < 0) { error.value = 'Final amount cannot be negative'; return; }
     const payload = {
       prescription: prescriptionId,
       medicine: form.value.medicine,
       quantity_dispensed: form.value.quantity_dispensed,
       amount_charged: form.value.amount_charged,
+      discount_amount: form.value.discount_amount,
+      additional_charges: form.value.additional_charges,
+      additional_charges_note: form.value.additional_note,
       notes: form.value.notes || `Dispensed via details page`
     };
     await api.post('/api/pharmacy/dispense/', payload);
+    const win = window.open('', '_blank', 'width=520,height=720');
+    if (win) {
+      const html = `
+        <html><head><title>Prescription Receipt</title></head><body>
+          <h2>Prescription Receipt</h2>
+          <div>Patient: ${prescription.value?.patient?.name || ''}</div>
+          <div>Medicine: ${selectedMedicine.value?.name || ''}</div>
+          <div>Quantity: ${form.value.quantity_dispensed}</div>
+          <div>Amount Charged: Kshs ${formatMoney(form.value.amount_charged)}</div>
+          <div>Discount: Kshs ${formatMoney(form.value.discount_amount)}</div>
+          <div>Additional Charges: Kshs ${formatMoney(form.value.additional_charges)}</div>
+          ${form.value.additional_note ? `<div>Note: ${form.value.additional_note}</div>` : ''}
+          <div><strong>Final Amount: Kshs ${formatMoney(finalAmount.value)}</strong></div>
+          <div>Dispensed By: ${localStorage.getItem('username') || 'pharmacist'}</div>
+          <div>Date/Time: ${new Date().toLocaleString()}</div>
+          <button onclick="window.print()">Print</button>
+        </body></html>`;
+      win.document.write(html);
+      win.document.close();
+    }
     alert('Prescription dispensed successfully.');
     router.push({ name: 'DispensePrescription' });
   } catch (e) {
@@ -250,5 +316,7 @@ input, select, textarea { width:100%; padding:8px; border:1px solid #ddd; border
 .btn-secondary { background:#636e72; }
 .btn:hover { opacity:0.9; }
 .info-box { padding:15px; background:#e3f2fd; border-left:4px solid #0984e3; border-radius:4px; }
+.total-box { background:#ecfdf5; border-color:#0c9f6a; }
+.grid-two { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
 .card { padding:15px; border:1px solid #ddd; border-radius:4px; margin-bottom:10px; }
 </style>

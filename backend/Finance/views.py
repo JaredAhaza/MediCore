@@ -1,10 +1,15 @@
-from django.shortcuts import render
+from datetime import date
+from decimal import Decimal
+from django.utils.dateparse import parse_date
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Invoice, Payment
-from .serializers import InvoiceSerializer, PaymentSerializer
+from rest_framework.views import APIView
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
+from .models import Invoice, Payment, RevenueEntry, ExpenseEntry
+from .serializers import InvoiceSerializer, PaymentSerializer, RevenueEntrySerializer, ExpenseEntrySerializer
 from .permissions import IsFinanceOrReadOnly
 
 # Create your views here.
@@ -35,7 +40,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 	@action(detail=False, methods=['post'])
 	def create_for_prescription(self, request):
 		"""Create an invoice for a prescription, using medicine selling price.
-		Expects: prescription (id), medicine (id), quantity (int, optional)
+		Expects: prescription (id), medicine (id), quantity (int, optional), discount?, additional_charges?
 		"""
 		try:
 			from emr.models import Prescription as EMRPrescription
@@ -43,18 +48,36 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 			pid = int(request.data.get('prescription'))
 			mid = int(request.data.get('medicine'))
 			qty = int(request.data.get('quantity') or 1)
+			discount_raw = request.data.get('discount') or request.data.get('discount_amount') or 0
+			additional_raw = request.data.get('additional_charges') or 0
+			additional_label = (request.data.get('additional_label') or request.data.get('additional_charges_note') or 'Additional Charges').strip() or 'Additional Charges'
+			try:
+				discount = Decimal(str(discount_raw))
+				additional_charges = Decimal(str(additional_raw))
+			except Exception:
+				return Response({'detail': 'Invalid monetary values for discount or additional charges'}, status=status.HTTP_400_BAD_REQUEST)
+			if discount < 0 or additional_charges < 0:
+				return Response({'detail': 'Discount and additional charges must be zero or positive'}, status=status.HTTP_400_BAD_REQUEST)
 			presc = EMRPrescription.objects.get(pk=pid)
 			med = Medicine.objects.get(pk=mid)
-			amount = (med.selling_price or 0) * qty
+			amount = Decimal(str(med.selling_price or 0)) * qty
+			services = [{
+				'code': f'MED-{med.id}',
+				'name': f"{med.name} (x{qty})",
+				'amount': float(amount)
+			}]
+			if additional_charges > 0:
+				services.append({
+					'code': 'ADD-CHARGE',
+					'name': additional_label,
+					'amount': float(additional_charges)
+				})
 			invoice = Invoice.objects.create(
 				patient=presc.patient.patient_profile,
 				prescription=presc,
 				created_by=request.user,
-				services=[{
-					'code': f'MED-{med.id}',
-					'name': f"{med.name} (x{qty})",
-					'amount': float(amount)
-				}]
+				discount=discount,
+				services=services
 			)
 			ser = self.get_serializer(invoice)
 			return Response(ser.data, status=status.HTTP_201_CREATED)
@@ -71,3 +94,96 @@ class PaymentViewSet(viewsets.ModelViewSet):
 	permission_classes = [IsAuthenticated & IsFinanceOrReadOnly]
 	filter_backends = [filters.OrderingFilter]
 	ordering_fields = ['created_at','amount']
+
+
+class BaseFinanceEntryViewSet(viewsets.ModelViewSet):
+	"""
+	Shared filtering logic for revenue and expense entries.
+	"""
+	date_field = 'occurred_on'
+	permission_classes = [IsAuthenticated & IsFinanceOrReadOnly]
+
+	def get_queryset(self):
+		qs = super().get_queryset()
+		start = self.request.query_params.get('start_date')
+		end = self.request.query_params.get('end_date')
+		if start:
+			start_date = parse_date(start)
+			if start_date:
+				qs = qs.filter(**{f'{self.date_field}__gte': start_date})
+		if end:
+			end_date = parse_date(end)
+			if end_date:
+				qs = qs.filter(**{f'{self.date_field}__lte': end_date})
+		category = self.request.query_params.get('category')
+		if category:
+			qs = qs.filter(category=category)
+		return qs
+
+
+class RevenueEntryViewSet(BaseFinanceEntryViewSet):
+	queryset = RevenueEntry.objects.select_related('invoice','recorded_by').order_by('-occurred_on','-created_at')
+	serializer_class = RevenueEntrySerializer
+
+
+class ExpenseEntryViewSet(BaseFinanceEntryViewSet):
+	queryset = ExpenseEntry.objects.select_related('recorded_by').order_by('-occurred_on','-created_at')
+	serializer_class = ExpenseEntrySerializer
+
+
+class FinancialPositionReportView(APIView):
+	permission_classes = [IsAuthenticated & IsFinanceOrReadOnly]
+
+	def _resolve_dates(self, request):
+		today = date.today()
+		start_param = request.query_params.get('start_date')
+		end_param = request.query_params.get('end_date')
+		if start_param:
+			start = parse_date(start_param) or today.replace(day=1)
+		else:
+			start = today.replace(day=1)
+		if end_param:
+			end = parse_date(end_param) or today
+		else:
+			end = today
+		if end < start:
+			start, end = end, start
+		return start, end
+
+	def get(self, request):
+		start, end = self._resolve_dates(request)
+
+		revenue_qs = RevenueEntry.objects.filter(occurred_on__range=(start, end))
+		expense_qs = ExpenseEntry.objects.filter(occurred_on__range=(start, end))
+		payment_qs = Payment.objects.filter(created_at__date__range=(start, end))
+
+		revenue_total = revenue_qs.aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total'] or Decimal('0')
+		expense_total = expense_qs.aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total'] or Decimal('0')
+		net_position = revenue_total - expense_total
+
+		revenue_breakdown = list(
+			revenue_qs.values('category').annotate(total=Coalesce(Sum('amount'), Decimal('0'))).order_by('-total')
+		)
+		expense_breakdown = list(
+			expense_qs.values('category').annotate(total=Coalesce(Sum('amount'), Decimal('0'))).order_by('-total')
+		)
+
+		accounts_receivable = Invoice.objects.filter(status='DUE').aggregate(
+			total=Coalesce(Sum('total'), Decimal('0'))
+		)['total'] or Decimal('0')
+		cash_collected = payment_qs.aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total'] or Decimal('0')
+
+		return Response({
+			'period': {'start_date': start.isoformat(), 'end_date': end.isoformat()},
+			'totals': {
+				'revenue': revenue_total,
+				'expenses': expense_total,
+				'net_position': net_position,
+				'accounts_receivable': accounts_receivable,
+				'cash_collected': cash_collected,
+			},
+			'breakdown': {
+				'revenue_by_category': revenue_breakdown,
+				'expenses_by_category': expense_breakdown,
+			}
+		})

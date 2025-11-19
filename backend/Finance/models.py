@@ -1,6 +1,8 @@
 from django.db import models
 from django.conf import settings
 from decimal import Decimal
+from django.utils import timezone
+from django.core.validators import MinValueValidator
 
 # Create your models here.
 
@@ -49,3 +51,52 @@ class Payment(models.Model):
 
 	def __str__(self):
 		return f"Payment {self.amount} on Invoice #{self.invoice_id}"
+
+
+class RevenueEntry(models.Model):
+	class Category(models.TextChoices):
+		INVOICE_PAYMENT = 'INVOICE_PAYMENT', 'Invoice Payment'
+		GRANT = 'GRANT', 'Grant/Donation'
+		OTHER = 'OTHER', 'Other'
+
+	occurred_on = models.DateField(default=timezone.now)
+	category = models.CharField(max_length=40, choices=Category.choices, default=Category.INVOICE_PAYMENT)
+	description = models.CharField(max_length=255, blank=True)
+	amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+	reference = models.CharField(max_length=100, blank=True)
+	invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True, related_name='revenue_entries')
+	recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='recorded_revenues')
+	metadata = models.JSONField(default=dict, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		ordering = ['-occurred_on', '-created_at']
+
+	def __str__(self):
+		return f"Revenue {self.amount} on {self.occurred_on}"
+
+
+class ExpenseEntry(models.Model):
+	class Category(models.TextChoices):
+		STOCK = 'STOCK', 'Inventory/Stock'
+		OPERATIONS = 'OPERATIONS', 'Operations'
+		SALARIES = 'SALARIES', 'Salaries'
+		OTHER = 'OTHER', 'Other'
+
+	occurred_on = models.DateField(default=timezone.now)
+	category = models.CharField(max_length=40, choices=Category.choices, default=Category.STOCK)
+	vendor = models.CharField(max_length=255, blank=True)
+	description = models.CharField(max_length=255, blank=True)
+	amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+	reference = models.CharField(max_length=100, blank=True)
+	recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='recorded_expenses')
+	metadata = models.JSONField(default=dict, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		ordering = ['-occurred_on', '-created_at']
+
+	def __str__(self):
+		return f"Expense {self.amount} on {self.occurred_on}"

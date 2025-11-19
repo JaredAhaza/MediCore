@@ -78,6 +78,29 @@
             </small>
           </div>
 
+          <div class="grid-two">
+            <div>
+              <label>Discount (Kshs)</label>
+              <input v-model.number="dispenseForm.discount_amount" type="number" step="0.01" min="0" />
+            </div>
+            <div>
+              <label>Additional Charges (Kshs)</label>
+              <input v-model.number="dispenseForm.additional_charges" type="number" step="0.01" min="0" />
+            </div>
+          </div>
+
+          <div v-if="Number(dispenseForm.additional_charges) > 0">
+            <label>Additional Charge Note</label>
+            <input v-model.trim="dispenseForm.additional_note" type="text" maxlength="120" placeholder="e.g. Packaging costs" />
+          </div>
+
+          <div class="info-box total-box">
+            <div>
+              <strong>Final Amount:</strong> Kshs {{ formatMoney(finalAmount) }}
+            </div>
+            <small>Final = Amount charged - Discount + Additional charges</small>
+          </div>
+
           <div>
             <label>Notes</label>
             <textarea v-model="dispenseForm.notes" rows="3" placeholder="Optional notes"></textarea>
@@ -116,11 +139,12 @@
             <strong>{{ disp.patient_name }}</strong> • {{ disp.medicine_name }}
           </div>
           <div>
-            Qty: {{ disp.quantity_dispensed }} • Kshs {{ disp.amount_charged }}
+              Qty: {{ disp.quantity_dispensed }} • Kshs {{ formatMoney(disp.final_amount ?? disp.amount_charged) }}
           </div>
         </div>
         <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
           {{ new Date(disp.dispensed_at).toLocaleString() }} • By: {{ disp.pharmacist_name }}
+          <span v-if="disp.additional_charges_note"> • Note: {{ disp.additional_charges_note }}</span>
         </div>
       </div>
     </div>
@@ -128,7 +152,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../api/client';
 
@@ -149,8 +173,24 @@ const dispenseForm = ref({
   medicine: '',
   quantity_dispensed: 1,
   amount_charged: 0,
+  discount_amount: 0,
+  additional_charges: 0,
+  additional_note: '',
   notes: ''
 });
+
+const finalAmount = computed(() => {
+  const base = Number(dispenseForm.value.amount_charged || 0);
+  const discount = Number(dispenseForm.value.discount_amount || 0);
+  const extra = Number(dispenseForm.value.additional_charges || 0);
+  const net = base - discount + extra;
+  return net > 0 ? Number(net.toFixed(2)) : 0;
+});
+
+function formatMoney(val) {
+  const num = Number(val || 0);
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 async function loadPrescriptions() {
   try {
@@ -195,7 +235,10 @@ function selectPrescription(prescription) {
 function onMedicineSelect() {
   selectedMedicine.value = availableMedicines.value.find(m => m.id === parseInt(dispenseForm.value.medicine));
   if (selectedMedicine.value) {
-    dispenseForm.value.amount_charged = (selectedMedicine.value.selling_price * dispenseForm.value.quantity_dispensed).toFixed(2);
+    dispenseForm.value.amount_charged = Number((selectedMedicine.value.selling_price * dispenseForm.value.quantity_dispensed).toFixed(2));
+    dispenseForm.value.discount_amount = 0;
+    dispenseForm.value.additional_charges = 0;
+    dispenseForm.value.additional_note = '';
   }
 }
 
@@ -223,12 +266,20 @@ async function dispense() {
     const medicineId = dispenseForm.value.medicine;
     const quantity = dispenseForm.value.quantity_dispensed;
 
+    if (finalAmount.value < 0) {
+      error.value = 'Final amount cannot be negative';
+      return;
+    }
+
     // Create a dispense record via backend API (handles stock deduction + status update)
     const { data } = await api.post('/api/pharmacy/dispense/', {
       prescription: prescriptionId,
       medicine: medicineId,
       quantity_dispensed: quantity,
       amount_charged: dispenseForm.value.amount_charged,
+      discount_amount: dispenseForm.value.discount_amount,
+      additional_charges: dispenseForm.value.additional_charges,
+      additional_charges_note: dispenseForm.value.additional_note,
       notes: dispenseForm.value.notes || `Dispensed via frontend by ${localStorage.getItem('username') || 'pharmacist'}`,
     });
 
@@ -252,7 +303,11 @@ async function dispense() {
           <div>Patient: ${selectedPrescription.value.patient.name}</div>
           <div>Medicine: ${selectedMedicine.value.name}</div>
           <div>Quantity: ${quantity}</div>
-          <div>Amount Charged: Kshs ${dispenseForm.value.amount_charged}</div>
+          <div>Amount Charged: Kshs ${formatMoney(dispenseForm.value.amount_charged)}</div>
+          <div>Discount: Kshs ${formatMoney(dispenseForm.value.discount_amount)}</div>
+          <div>Additional Charges: Kshs ${formatMoney(dispenseForm.value.additional_charges)}</div>
+          ${dispenseForm.value.additional_note ? `<div>Note: ${dispenseForm.value.additional_note}</div>` : ''}
+          <div><strong>Final Amount: Kshs ${formatMoney(finalAmount.value)}</strong></div>
           <div>Dispensed By: ${localStorage.getItem('username') || 'pharmacist'}</div>
           <div>Date/Time: ${new Date().toLocaleString()}</div>
           <button onclick="window.print()">Print</button>
@@ -284,7 +339,10 @@ async function generateInvoice() {
     const { data } = await api.post('/api/invoices/create_for_prescription/', {
       prescription: selectedPrescription.value.id,
       medicine: selectedMedicine.value.id,
-      quantity
+      quantity,
+      discount: dispenseForm.value.discount_amount,
+      additional_charges: dispenseForm.value.additional_charges,
+      additional_label: dispenseForm.value.additional_note
     });
     currentInvoice.value = data;
     alert(`Invoice #${data.id} created. Status: ${data.status}`);
@@ -313,7 +371,7 @@ async function recordPayment() {
       error.value = 'No invoice found. Generate invoice first';
       return;
     }
-    const amount = currentInvoice.value.total ?? ((selectedMedicine.value?.selling_price || 0) * (dispenseForm.value.quantity_dispensed || 1));
+    const amount = currentInvoice.value?.total ?? finalAmount.value;
     const payload = {
       invoice: currentInvoice.value.id,
       amount,
@@ -340,6 +398,9 @@ function cancelDispense() {
     medicine: '',
     quantity_dispensed: 1,
     amount_charged: 0,
+    discount_amount: 0,
+    additional_charges: 0,
+    additional_note: '',
     notes: ''
   };
   error.value = '';
@@ -372,4 +433,6 @@ input, select, textarea { width: 100%; padding: 8px; border: 1px solid #ddd; bor
 .btn:hover { opacity: 0.9; }
 .prescription-card { padding: 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px; }
 .info-box { padding: 15px; background: #e3f2fd; border-left: 4px solid #0984e3; border-radius: 4px; }
+.total-box { background: #ecfdf5; border-color: #0c9f6a; }
+.grid-two { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
 </style>

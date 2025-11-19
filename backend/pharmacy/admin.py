@@ -32,7 +32,11 @@ class InventoryTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(PrescriptionDispense)
 class PrescriptionDispenseAdmin(admin.ModelAdmin):
-    list_display = ['prescription', 'medicine', 'quantity_dispensed', 'pharmacist', 'amount_charged', 'dispensed_at']
+    list_display = [
+        'prescription', 'medicine', 'quantity_dispensed', 'pharmacist',
+        'amount_charged', 'discount_amount', 'additional_charges', 'additional_charges_note',
+        'final_amount', 'dispensed_at'
+    ]
     list_filter = ['dispensed_at', 'pharmacist']
     search_fields = ['prescription__patient__name', 'medicine__name']
     readonly_fields = ['dispensed_at']

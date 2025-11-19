@@ -71,15 +71,16 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
     auto_calculated_quantity = serializers.SerializerMethodField(read_only=True)
     medicine_current_stock = serializers.SerializerMethodField(read_only=True)
     medicine_name = serializers.CharField(source='medicine.name', read_only=True)
+    final_amount = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PrescriptionDispense
         fields = [
             'id', 'prescription', 'medicine', 'medicine_name', 'quantity_dispensed',
-            'auto_calculated_quantity', 'amount_charged',
-            'pharmacist', 'notes', 'dispensed_at', 'medicine_current_stock'
+            'auto_calculated_quantity', 'amount_charged', 'discount_amount', 'additional_charges',
+            'additional_charges_note', 'final_amount', 'pharmacist', 'notes', 'dispensed_at', 'medicine_current_stock'
         ]
-        read_only_fields = ['dispensed_at', 'pharmacist', 'auto_calculated_quantity', 'medicine_current_stock', 'medicine_name']
+        read_only_fields = ['dispensed_at', 'pharmacist', 'auto_calculated_quantity', 'medicine_current_stock', 'medicine_name', 'final_amount']
 
     def _extract_number(self, text):
         match = re.search(r'\d+', str(text))
@@ -104,6 +105,12 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
             freq = 1
 
         return dosage_num * freq * duration_num
+
+    def _normalize_decimal(self, value):
+        try:
+            return Decimal(str(value or '0')).quantize(Decimal('0.01'))
+        except Exception:
+            raise serializers.ValidationError('Invalid monetary amount supplied.')
 
     def validate(self, data):
         prescription = data.get('prescription')
@@ -149,6 +156,26 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "medicine": f"Insufficient stock. Available: {medicine.current_stock}, Needed: {requested_qty}"
                 })
+
+        discount = self._normalize_decimal(data.get('discount_amount', Decimal('0.00')))
+        additional = self._normalize_decimal(data.get('additional_charges', Decimal('0.00')))
+        base_amount = self._normalize_decimal(data.get('amount_charged', Decimal('0.00')))
+
+        if discount < Decimal('0.00') or additional < Decimal('0.00'):
+            raise serializers.ValidationError('Discount and additional charges must be zero or positive.')
+
+        final_amount = base_amount - discount + additional
+        if final_amount < Decimal('0.00'):
+            raise serializers.ValidationError('Final amount cannot be negative.')
+
+        data['amount_charged'] = base_amount
+        data['discount_amount'] = discount
+        data['additional_charges'] = additional
+        note = (data.get('additional_charges_note') or '').strip()
+        if additional > Decimal('0.00'):
+            data['additional_charges_note'] = note or 'Additional Charges'
+        else:
+            data['additional_charges_note'] = ''
 
         return data
 
@@ -202,6 +229,12 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
     def get_medicine_current_stock(self, obj):
         try:
             return obj.medicine.current_stock
+        except Exception:
+            return None
+
+    def get_final_amount(self, obj):
+        try:
+            return obj.final_amount
         except Exception:
             return None
 

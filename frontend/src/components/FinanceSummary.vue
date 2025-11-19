@@ -94,6 +94,59 @@
       </div>
     </div>
   </div>
+
+  <div class="card" v-if="financialPosition">
+    <h4>Financial Position</h4>
+    <div class="period-label">
+      Period:
+      <strong>
+        {{ formatShortDate(financialPeriod?.start_date) }} – {{ formatShortDate(financialPeriod?.end_date) }}
+      </strong>
+    </div>
+    <div class="position-grid">
+      <div class="stat">
+        <div class="label">Total Revenue</div>
+        <div class="value">{{ formatMoney(financialTotals.revenue) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Expenses</div>
+        <div class="value">{{ formatMoney(financialTotals.expenses) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Net Position</div>
+        <div class="value">{{ formatMoney(financialTotals.net_position) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Accounts Receivable</div>
+        <div class="value">{{ formatMoney(financialTotals.accounts_receivable) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Cash Collected</div>
+        <div class="value">{{ formatMoney(financialTotals.cash_collected) }}</div>
+      </div>
+    </div>
+
+    <div class="breakdown-grid">
+      <div>
+        <strong>Revenue by Category</strong>
+        <ul>
+          <li v-if="!financialBreakdown.revenue_by_category?.length" style="color:#666;">No revenue entries.</li>
+          <li v-for="item in financialBreakdown.revenue_by_category" :key="item.category">
+            {{ item.category }} — Kshs {{ formatMoney(item.total) }}
+          </li>
+        </ul>
+      </div>
+      <div>
+        <strong>Expenses by Category</strong>
+        <ul>
+          <li v-if="!financialBreakdown.expenses_by_category?.length" style="color:#666;">No expense entries.</li>
+          <li v-for="item in financialBreakdown.expenses_by_category" :key="item.category">
+            {{ item.category }} — Kshs {{ formatMoney(item.total) }}
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -114,9 +167,13 @@ const paymentsList = ref([]);
 const stockInList = ref([]);
 const activeDetail = ref(null); // 'paid' | 'spent' | null
 const buyingPriceMap = new Map();
+const financialPosition = ref(null);
 
-  const canViewFinance = computed(() => ['ADMIN','FINANCE'].includes(auth.user?.role));
-  const isOnFinancePage = computed(() => route.name === 'FinanceDashboard');
+const canViewFinance = computed(() => ['ADMIN','FINANCE'].includes(auth.user?.role));
+const isOnFinancePage = computed(() => route.name === 'FinanceDashboard');
+const financialTotals = computed(() => financialPosition.value?.totals || {});
+const financialBreakdown = computed(() => financialPosition.value?.breakdown || { revenue_by_category: [], expenses_by_category: [] });
+const financialPeriod = computed(() => financialPosition.value?.period || null);
 
   function formatMoney(n) {
     const num = Number(n || 0);
@@ -128,6 +185,12 @@ const buyingPriceMap = new Map();
       return d.toLocaleString();
     } catch { return s; }
   }
+function formatShortDate(s) {
+  try {
+    const d = new Date(s);
+    return d.toLocaleDateString();
+  } catch { return s; }
+}
   function showPaidDetails() { activeDetail.value = 'paid'; }
   function showSpentDetails() { activeDetail.value = 'spent'; }
   function closeDetails() { activeDetail.value = null; }
@@ -279,6 +342,14 @@ async function loadFinance() {
     // Gross profit from dispensed transactions (should NOT be added to moneySpent)
     const profitData = profitRes.data || {};
     grossProfit.value = Number(profitData.profit || 0);
+
+    try {
+      const reportRes = await api.get('/api/finance/reports/financial-position/');
+      financialPosition.value = reportRes.data || null;
+    } catch (reportErr) {
+      console.warn('Financial position report unavailable:', reportErr);
+      financialPosition.value = null;
+    }
     
     // Debug logging (remove in production)
     console.log('Finance Data:', {
@@ -309,4 +380,8 @@ onMounted(loadFinance);
 }
 .stat .label { color: #6b7280; font-size: .9em; }
 .stat .value { font-size: 1.4em; font-weight: 600; margin-top: 4px; }
+.period-label { margin-top: 8px; color:#6b7280; }
+.position-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:8px; }
+.breakdown-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:16px; margin-top:12px; }
+.breakdown-grid ul { margin:8px 0 0; padding-left:16px; }
 </style>
