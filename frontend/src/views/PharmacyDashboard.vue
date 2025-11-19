@@ -1,8 +1,15 @@
 <template>
   <div>
     <div class="card">
-      <h2>Pharmacy Dashboard</h2>
-      <p>Inventory management and low stock alerts</p>
+      <div class="card-header">
+        <div>
+          <h2>Pharmacy Dashboard</h2>
+          <p>Inventory management and low stock alerts</p>
+        </div>
+        <button class="btn" type="button" @click="voiceInsights" :disabled="speaking">
+          {{ speaking ? 'Speaking…' : 'Voice Insights' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="lowStockCount > 0" class="card" style="background: #fff3cd; border-left: 4px solid #ff6b6b;">
@@ -59,6 +66,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import api from '../api/client';
+import { useVoiceInsights } from '@/composables/useVoiceInsights';
 
 const lowStockItems = ref([]);
 const medicines = ref([]);
@@ -69,6 +77,7 @@ const stats = ref({
 });
 
 const lowStockCount = computed(() => lowStockItems.value.length);
+const { speaking, speakInsights } = useVoiceInsights();
 
 async function loadDashboard() {
   try {
@@ -101,9 +110,44 @@ onMounted(() => {
   loadDashboard();
   setInterval(loadDashboard, 30000); // Refresh every 30 seconds
 });
+
+async function voiceInsights() {
+  try {
+    await loadDashboard();
+    const criticalList = lowStockItems.value
+      .slice(0, 3)
+      .map(item => `${item.name} with only ${item.current_stock} units left`);
+    const categories = medicines.value.reduce((acc, med) => {
+      if (!med.category) return acc;
+      acc[med.category] = (acc[med.category] || 0) + 1;
+      return acc;
+    }, {});
+    const topCategory = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
+
+    const parts = [
+      `Pharmacy inventory overview: ${stats.value.total_medicines} medicines tracked.`,
+      `${stats.value.in_stock} items are healthy, ${lowStockCount.value} are running low, and ${stats.value.out_of_stock} are out of stock.`,
+      topCategory ? `${topCategory[0]} is the busiest category with ${topCategory[1]} distinct medicines.` : '',
+      criticalList.length
+        ? `Immediate restock needed for ${criticalList.join(', ')}.`
+        : 'No medicines are critically low right now.'
+    ];
+
+    await speakInsights(parts);
+  } catch (error) {
+    console.error('Pharmacy voice insights failed', error);
+    alert('Unable to generate pharmacy voice insights.');
+  }
+}
 </script>
 
 <style scoped>
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
 .btn {
   padding: 10px 20px;
   background: #0984e3;

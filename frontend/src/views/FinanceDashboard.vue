@@ -17,26 +17,17 @@ import FinanceSummary from '@/components/FinanceSummary.vue';
 import InvoiceImport from '@/components/InvoiceImport.vue';
 
 import client from '@/api/client';
-import { ref } from 'vue';
+import { useVoiceInsights } from '@/composables/useVoiceInsights';
 
-const speaking = ref(false);
+const { speaking, speakInsights } = useVoiceInsights();
 
 async function voiceInsights() {
-  const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
-  const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // default voice if set
-  if (!apiKey) {
-    alert('ElevenLabs API key not configured. Set VITE_ELEVENLABS_API_KEY in .env.');
-    return;
-  }
-  speaking.value = true;
   try {
-    const [lowStockRes, profitRes, reportRes, invoicesRes] = await Promise.all([
-      client.get('/api/pharmacy/medicines/low_stock/'),
+    const [profitRes, reportRes, invoicesRes] = await Promise.all([
       client.get('/api/pharmacy/inventory-transactions/profit_summary/'),
       client.get('/api/finance/reports/financial-position/'),
       client.get('/api/invoices/')
     ]);
-    const lowCount = Array.isArray(lowStockRes.data) ? lowStockRes.data.length : 0;
     const profit = Number(profitRes?.data?.profit ?? 0).toFixed(2);
     const report = reportRes?.data || {};
     const totals = report.totals || {};
@@ -55,34 +46,12 @@ async function voiceInsights() {
       `Cash collected is ${formatMoney(totals.cash_collected)} and accounts receivable are ${formatMoney(totals.accounts_receivable)} with ${pendingInvoices} invoices still pending payment.`,
       `Gross profit from dispensing activity is ${formatMoney(profit)}.`,
       topRevenue ? `Top revenue source is ${topRevenue.category} contributing ${formatMoney(topRevenue.total)}.` : '',
-      topExpense ? `Largest expense category is ${topExpense.category} at ${formatMoney(topExpense.total)}.` : '',
-      `There are ${lowCount} medicines at or below reorder levels, consider restocking soon.`
+      topExpense ? `Largest expense category is ${topExpense.category} at ${formatMoney(topExpense.total)}.` : ''
     ].filter(Boolean);
 
-    const text = narrativeParts.join(' ');
-
-    // Call ElevenLabs TTS
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text,
-        voice_settings: { stability: 0.5, similarity_boost: 0.5 }
-      })
-    });
-    if (!resp.ok) throw new Error('TTS request failed');
-    const blob = await resp.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
-    audio.play();
+    await speakInsights(narrativeParts);
   } catch (e) {
     alert('Failed to generate voice insights.');
-  } finally {
-    speaking.value = false;
   }
 }
 </script>
