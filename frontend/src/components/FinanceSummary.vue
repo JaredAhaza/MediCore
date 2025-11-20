@@ -139,9 +139,9 @@
       <div>
         <strong>Expenses by Category</strong>
         <ul>
-          <li v-if="!financialBreakdown.expenses_by_category?.length" style="color:#666;">No expense entries.</li>
-          <li v-for="item in financialBreakdown.expenses_by_category" :key="item.category">
-            {{ item.category }} — Kshs {{ formatMoney(item.total) }}
+          <li v-if="!expensesByCategory.length" style="color:#666;">No expense entries.</li>
+          <li v-for="item in expensesByCategory" :key="item.category">
+            {{ formatExpenseCategory(item.category) }} — Kshs {{ formatMoney(item.total) }}
           </li>
         </ul>
       </div>
@@ -174,6 +174,11 @@ const isOnFinancePage = computed(() => route.name === 'FinanceDashboard');
 const financialTotals = computed(() => financialPosition.value?.totals || {});
 const financialBreakdown = computed(() => financialPosition.value?.breakdown || { revenue_by_category: [], expenses_by_category: [] });
 const financialPeriod = computed(() => financialPosition.value?.period || null);
+const expenseCategoryTotals = ref([]);
+const expensesByCategory = computed(() => {
+  if (expenseCategoryTotals.value.length) return expenseCategoryTotals.value;
+  return financialBreakdown.value.expenses_by_category || [];
+});
 
   function formatMoney(n) {
     const num = Number(n || 0);
@@ -190,6 +195,17 @@ function formatShortDate(s) {
     const d = new Date(s);
     return d.toLocaleDateString();
   } catch { return s; }
+}
+function formatExpenseCategory(code) {
+  const labels = {
+    STOCK: 'Inventory / Stock',
+    OPERATIONS: 'Operations',
+    SALARIES: 'Salaries',
+    OTHER: 'Other',
+    INVOICE_PAYMENT: 'Invoice Payment',
+    GRANT: 'Grant / Donation',
+  };
+  return labels[code] || code || 'Unknown';
 }
   function showPaidDetails() { activeDetail.value = 'paid'; }
   function showSpentDetails() { activeDetail.value = 'spent'; }
@@ -306,18 +322,33 @@ function formatShortDate(s) {
     setTimeout(() => { try { w.print(); } catch {} }, 250);
   }
 
+function aggregateExpensesByCategory(entries) {
+  const totals = new Map();
+  for (const entry of entries || []) {
+    const key = entry.category || 'OTHER';
+    const prev = totals.get(key) || 0;
+    totals.set(key, prev + Number(entry.amount || 0));
+  }
+  expenseCategoryTotals.value = Array.from(totals.entries()).map(([category, total]) => ({ category, total }));
+}
+
 async function loadFinance() {
   if (!auth.access) return; // don't load if not logged in
   loading.value = true;
   error.value = "";
   try {
-    const [invRes, payRes, transRes, medsRes, spentRes, profitRes] = await Promise.all([
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+    const endDate = today.toISOString().slice(0,10);
+
+    const [invRes, payRes, transRes, medsRes, spentRes, profitRes, expensesRes] = await Promise.all([
       api.get('/api/invoices/'),
       api.get('/api/payments/'),
       api.get('/api/pharmacy/inventory-transactions/', { params: { transaction_type: 'STOCK_IN' } }),
       api.get('/api/pharmacy/medicines', { params: { is_active: true } }),
       api.get('/api/pharmacy/inventory-transactions/spend_summary/'),
-      api.get('/api/pharmacy/inventory-transactions/profit_summary/')
+      api.get('/api/pharmacy/inventory-transactions/profit_summary/'),
+      api.get('/api/expenses/', { params: { start_date: startOfMonth, end_date: endDate } })
     ]);
     
     const invoices = invRes.data || [];
@@ -342,6 +373,9 @@ async function loadFinance() {
     // Gross profit from dispensed transactions (should NOT be added to moneySpent)
     const profitData = profitRes.data || {};
     grossProfit.value = Number(profitData.profit || 0);
+
+    const expenseEntries = expensesRes.data || [];
+    aggregateExpensesByCategory(expenseEntries);
 
     try {
       const reportRes = await api.get('/api/finance/reports/financial-position/');

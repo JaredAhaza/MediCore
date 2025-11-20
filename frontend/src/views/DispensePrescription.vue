@@ -8,7 +8,7 @@
     <div class="card">
       <h4>Select Prescription</h4>
       <div style="margin-bottom: 20px;">
-        <input v-model="searchQuery" placeholder="Search by patient name or prescription ID..." @input="debouncedLoad" />
+        <input v-model="searchQuery" placeholder="Search by patient name, prescription or national ID..." @input="debouncedLoad" />
       </div>
 
       <div v-if="prescriptions.length === 0" style="text-align: center; color: #999; padding: 20px;">
@@ -21,6 +21,9 @@
             <strong>{{ prescription.patient.name }}</strong>
             <div style="font-size: 0.9em; color: #666; margin: 5px 0;">
               Medication: <strong>{{ prescription.medication }}</strong>
+            </div>
+            <div v-if="prescription.patient?.national_id" style="font-size:0.85em; color:#2d3436;">
+              National ID: {{ prescription.patient.national_id }}
             </div>
             <div style="font-size: 0.85em; color: #999;">
               Dosage: {{ prescription.dosage }} | Duration: {{ prescription.duration }}
@@ -89,16 +92,46 @@
             </div>
           </div>
 
-          <div v-if="Number(dispenseForm.additional_charges) > 0">
-            <label>Additional Charge Note</label>
-            <input v-model.trim="dispenseForm.additional_note" type="text" maxlength="120" placeholder="e.g. Packaging costs" />
+          <div v-if="hasAdditionalCharges" style="margin-top: 10px; padding: 12px; background: #fff3cd; border-radius: 4px; border-left: 4px solid #f39c12;">
+            <label style="font-weight: 600; color: #856404;">
+              Additional Charge Note (e.g., Packaging costs) *
+            </label>
+            <input 
+              v-model.trim="dispenseForm.additional_note" 
+              type="text" 
+              maxlength="120" 
+              placeholder="e.g. Packaging costs" 
+              required
+              style="border: 2px solid #0984e3; margin-top: 6px; width: 100%; padding: 8px;"
+            />
+            <small style="color: #666; display: block; margin-top: 4px;">
+              This note will appear on receipts and invoices
+            </small>
+            <div v-if="showAdditionalNoteWarning" style="color: #ff7675; font-size: 0.85em; margin-top: 4px; font-weight: 500;">
+              ⚠ Please enter a note for the additional charges
+            </div>
           </div>
 
           <div class="info-box total-box">
             <div>
               <strong>Final Amount:</strong> Kshs {{ formatMoney(finalAmount) }}
             </div>
-            <small>Final = Amount charged - Discount + Additional charges</small>
+            <div style="font-size: 0.9em; margin-top: 8px; color: #555;">
+              <div>Amount Charged: Kshs {{ formatMoney(dispenseForm.amount_charged) }}</div>
+              <div v-if="dispenseForm.discount_amount > 0">
+                Discount: -Kshs {{ formatMoney(dispenseForm.discount_amount) }}
+              </div>
+              <div v-if="dispenseForm.additional_charges > 0">
+                Additional Charges: +Kshs {{ formatMoney(dispenseForm.additional_charges) }}
+                <span v-if="dispenseForm.additional_note" style="color: #0984e3; font-style: italic; font-weight: 500;">
+                  ({{ dispenseForm.additional_note }})
+                </span>
+                <span v-else style="color: #ff7675; font-size: 0.85em;">
+                  — Note required
+                </span>
+              </div>
+            </div>
+            <small style="display: block; margin-top: 8px;">Final = Amount charged - Discount + Additional charges</small>
           </div>
 
           <div>
@@ -106,11 +139,37 @@
             <textarea v-model="dispenseForm.notes" rows="3" placeholder="Optional notes"></textarea>
           </div>
 
+          <div class="payment-config">
+            <div>
+              <label>Payment Method</label>
+              <select v-model="paymentForm.method">
+                <option v-for="method in paymentMethods" :key="method.value" :value="method.value">
+                  {{ method.label }}
+                </option>
+              </select>
+            </div>
+            <div v-if="paymentRequiresReference">
+              <label>Reference *</label>
+              <input
+                v-model.trim="paymentForm.reference"
+                placeholder="e.g. MPESA code / transaction id"
+              />
+            </div>
+          </div>
+
           <div style="display: flex; gap: 10px; align-items: center;">
             <button type="submit" class="btn" :disabled="isLoading || !currentInvoice || currentInvoice.status !== 'PAID'">{{ isLoading ? 'Processing...' : 'Complete Dispensing' }}</button>
             <button type="button" @click="cancelDispense" class="btn btn-secondary" :disabled="isLoading">Cancel</button>
             <button type="button" class="btn" style="background:#00b894;" @click="generateInvoice" :disabled="isLoading || !selectedMedicine">Generate Invoice</button>
-            <button type="button" class="btn" style="background:#6c5ce7;" @click="recordPayment" :disabled="isLoading || !currentInvoice">Record Payment</button>
+            <button
+              type="button"
+              class="btn"
+              style="background:#6c5ce7;"
+              @click="recordPayment"
+              :disabled="isLoading || !currentInvoice || paymentReferenceMissing"
+            >
+              Record Payment
+            </button>
             <span v-if="isLoading" style="color: #666;">Updating inventory…</span>
           </div>
 
@@ -121,6 +180,14 @@
             </div>
             <div style="font-size:0.9em; color:#555;">
               Subtotal: Kshs {{ currentInvoice.subtotal }} • Discount: Kshs {{ currentInvoice.discount }} • Total: Kshs {{ currentInvoice.total }}
+            </div>
+            <div v-if="currentInvoice.services && currentInvoice.services.length" class="invoice-services">
+              <div style="font-weight:600; margin-top:8px;">Line Items</div>
+              <ul>
+                <li v-for="(svc, idx) in currentInvoice.services" :key="idx">
+                  {{ svc.name }} — Kshs {{ formatMoney(svc.amount) }}
+                </li>
+              </ul>
             </div>
           </div>
 
@@ -168,6 +235,19 @@ const error = ref('');
 const isLoading = ref(false);
 let timer;
 
+const paymentForm = ref({
+  method: 'CASH',
+  reference: '',
+});
+const paymentMethods = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'MPESA', label: 'Mpesa' },
+  { value: 'CARD', label: 'Card' },
+  { value: 'INSURANCE', label: 'Insurance' },
+];
+const paymentRequiresReference = computed(() => paymentForm.value.method !== 'CASH');
+const paymentReferenceMissing = computed(() => paymentRequiresReference.value && !paymentForm.value.reference?.trim());
+
 const dispenseForm = ref({
   prescription: '',
   medicine: '',
@@ -185,6 +265,14 @@ const finalAmount = computed(() => {
   const extra = Number(dispenseForm.value.additional_charges || 0);
   const net = base - discount + extra;
   return net > 0 ? Number(net.toFixed(2)) : 0;
+});
+
+const hasAdditionalCharges = computed(() => {
+  return Number(dispenseForm.value.additional_charges || 0) > 0;
+});
+
+const showAdditionalNoteWarning = computed(() => {
+  return hasAdditionalCharges.value && !dispenseForm.value.additional_note?.trim();
 });
 
 function formatMoney(val) {
@@ -294,23 +382,83 @@ async function dispense() {
     }
 
     // Print receipt
-    const win = window.open('', '_blank', 'width=480,height=640');
+    const win = window.open('', '_blank', 'width=520,height=720');
+    const pharmacistUsername = data?.pharmacist_username || localStorage.getItem('username') || 'pharmacist';
+    const pharmacistId = data?.pharmacist_id || '';
+    const patientName = data?.patient_name || selectedPrescription.value?.patient?.name || currentInvoice.value?.patient_detail?.name || 'Unknown Patient';
+    const paymentStatus = currentInvoice.value?.status || 'N/A';
+    const goodsAmount = dispenseForm.value.amount_charged;
+    const discountAmount = dispenseForm.value.discount_amount || 0;
+    const additionalCharges = dispenseForm.value.additional_charges || 0;
+    const finalTotal = finalAmount.value;
+    const paymentMethodCode = paymentForm.value.method || 'CASH';
+    const methodLabels = { CASH: 'Cash', MPESA: 'Mpesa', CARD: 'Card', INSURANCE: 'Insurance' };
+    const paymentMethodLabel = methodLabels[paymentMethodCode] || paymentMethodCode;
+    const paymentReference = (paymentForm.value.reference || '').trim() || (paymentMethodCode === 'CASH' ? '-' : '');
+    
     const html = `
       <html>
         <head><title>Prescription Receipt</title></head>
-        <body>
-          <h2>Prescription Receipt</h2>
-          <div>Patient: ${selectedPrescription.value.patient.name}</div>
-          <div>Medicine: ${selectedMedicine.value.name}</div>
-          <div>Quantity: ${quantity}</div>
-          <div>Amount Charged: Kshs ${formatMoney(dispenseForm.value.amount_charged)}</div>
-          <div>Discount: Kshs ${formatMoney(dispenseForm.value.discount_amount)}</div>
-          <div>Additional Charges: Kshs ${formatMoney(dispenseForm.value.additional_charges)}</div>
-          ${dispenseForm.value.additional_note ? `<div>Note: ${dispenseForm.value.additional_note}</div>` : ''}
-          <div><strong>Final Amount: Kshs ${formatMoney(finalAmount.value)}</strong></div>
-          <div>Dispensed By: ${localStorage.getItem('username') || 'pharmacist'}</div>
-          <div>Date/Time: ${new Date().toLocaleString()}</div>
-          <button onclick="window.print()">Print</button>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2 style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">Prescription Receipt</h2>
+          
+          <div style="margin-bottom: 20px;">
+            <div style="margin: 10px 0;"><strong>Patient:</strong> ${patientName}</div>
+            <div style="margin: 10px 0;"><strong>Medicine:</strong> ${selectedMedicine.value.name}</div>
+            <div style="margin: 10px 0;"><strong>Quantity:</strong> ${quantity}</div>
+          </div>
+          
+          <hr style="margin: 20px 0; border: 1px solid #ddd;">
+          
+          <div style="margin-bottom: 20px;">
+            <h3 style="margin: 0 0 15px 0; font-size: 1.1em;">Cost Breakdown</h3>
+            <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 5px 0;">
+              <span>Goods/Medicine Charge:</span>
+              <span><strong>Kshs ${formatMoney(goodsAmount)}</strong></span>
+            </div>
+            ${discountAmount > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 5px 0; color: #00b894;">
+              <span>Discount:</span>
+              <span><strong>-Kshs ${formatMoney(discountAmount)}</strong></span>
+            </div>
+            ` : ''}
+            ${additionalCharges > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 5px 0; color: #0984e3;">
+              <span>Additional Charges${dispenseForm.value.additional_note ? ` (${dispenseForm.value.additional_note})` : ''}:</span>
+              <span><strong>+Kshs ${formatMoney(additionalCharges)}</strong></span>
+            </div>
+            ` : ''}
+            <hr style="margin: 15px 0; border: 1px solid #ddd;">
+            <div style="display: flex; justify-content: space-between; margin: 10px 0; padding: 10px 0; font-size: 1.2em; border-top: 2px solid #333; border-bottom: 2px solid #333;">
+              <span><strong>Total Amount:</strong></span>
+              <span><strong>Kshs ${formatMoney(finalTotal)}</strong></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin: 10px 0; padding: 5px 0;">
+              <span><strong>Payment Status:</strong></span>
+              <span style="color: ${paymentStatus === 'PAID' ? '#00b894' : paymentStatus === 'DUE' ? '#ff7675' : '#636e72'}; font-weight: bold;">
+                ${paymentStatus}
+              </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 4px 0; font-size: 0.95em;">
+              <span><strong>Payment Method:</strong></span>
+              <span>${paymentMethodLabel}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin: 4px 0; padding: 4px 0; font-size: 0.9em;">
+              <span><strong>Reference:</strong></span>
+              <span>${paymentReference}</span>
+            </div>
+          </div>
+          
+          <hr style="margin: 20px 0; border: 1px solid #ddd;">
+          
+          <div style="margin-top: 20px; font-size: 0.9em; color: #666;">
+            <div style="margin: 8px 0;"><strong>Dispensed By:</strong> ${pharmacistUsername}${pharmacistId ? ` (ID: ${pharmacistId})` : ''}</div>
+            <div style="margin: 8px 0;"><strong>Date/Time:</strong> ${new Date().toLocaleString()}</div>
+          </div>
+          
+          <div style="text-align: center; margin-top: 30px;">
+            <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0984e3; color: white; border: none; border-radius: 4px;">Print</button>
+          </div>
         </body>
       </html>`;
     win.document.write(html);
@@ -345,6 +493,34 @@ async function generateInvoice() {
       additional_label: dispenseForm.value.additional_note
     });
     currentInvoice.value = data;
+    // Show invoice receipt with details
+    const win = window.open('', '_blank', 'width=520,height=720');
+    const itemsHtml = (data.services || []).map(s => `<li style="margin: 5px 0;">${s.name} — Kshs ${formatMoney(s.amount)}</li>`).join('');
+    const patientName = selectedPrescription.value?.patient?.name || data.patient_detail?.name || 'Unknown Patient';
+    const createdByUsername = data.created_by_username || localStorage.getItem('username') || 'user';
+    const createdById = data.created_by_id || '';
+    const html = `
+      <html><head><title>Invoice Receipt</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px;">Invoice #${data.id}</h2>
+        <div style="margin: 15px 0;"><strong>Status:</strong> ${data.status}</div>
+        <div style="margin: 15px 0;"><strong>Patient:</strong> ${patientName}</div>
+        <hr style="margin: 20px 0;">
+        <h3 style="margin: 15px 0;">Items</h3>
+        <ul style="list-style: none; padding: 0;">${itemsHtml}</ul>
+        <hr style="margin: 20px 0;">
+        <div style="margin: 10px 0;">Subtotal: Kshs ${formatMoney(data.subtotal)}</div>
+        <div style="margin: 10px 0;">Discount: Kshs ${formatMoney(data.discount)}</div>
+        <div style="margin: 15px 0; font-size: 1.2em;"><strong>Total Due: Kshs ${formatMoney(data.total)}</strong></div>
+        <hr style="margin: 20px 0;">
+        <div style="margin: 10px 0;"><strong>Created By:</strong> ${createdByUsername}${createdById ? ` (ID: ${createdById})` : ''}</div>
+        <div style="margin: 10px 0;"><strong>Date/Time:</strong> ${new Date(data.created_at).toLocaleString()}</div>
+        <div style="text-align: center; margin-top: 30px;">
+          <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0984e3; color: white; border: none; border-radius: 4px;">Print</button>
+        </div>
+      </body></html>`;
+    win.document.write(html);
+    win.document.close();
     alert(`Invoice #${data.id} created. Status: ${data.status}`);
   } catch (err) {
     error.value = err.response?.data?.detail || 'Failed to create invoice';
@@ -371,15 +547,22 @@ async function recordPayment() {
       error.value = 'No invoice found. Generate invoice first';
       return;
     }
+    if (paymentReferenceMissing.value) {
+      error.value = 'Please enter a payment reference.';
+      return;
+    }
     const amount = currentInvoice.value?.total ?? finalAmount.value;
     const payload = {
       invoice: currentInvoice.value.id,
       amount,
-      method: 'CASH',
-      reference: `RCPT-${currentInvoice.value.id}`
+      method: paymentForm.value.method,
     };
+    const ref = paymentForm.value.reference?.trim();
+    if (ref) payload.reference = ref;
+    else if (paymentForm.value.method !== 'CASH') payload.reference = '';
     await api.post('/api/payments/', payload);
     await loadInvoiceForPrescription();
+    paymentForm.value.reference = '';
     alert(`Payment recorded. Invoice #${currentInvoice.value?.id} status: ${currentInvoice.value?.status}`);
   } catch (e) {
     const data = e.response?.data || {};
@@ -435,4 +618,11 @@ input, select, textarea { width: 100%; padding: 8px; border: 1px solid #ddd; bor
 .info-box { padding: 15px; background: #e3f2fd; border-left: 4px solid #0984e3; border-radius: 4px; }
 .total-box { background: #ecfdf5; border-color: #0c9f6a; }
 .grid-two { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+.invoice-services ul { padding-left: 18px; margin: 6px 0 0; }
+.invoice-services li { font-size: 0.9em; color: #333; margin-bottom: 2px; }
+.payment-config {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+}
 </style>

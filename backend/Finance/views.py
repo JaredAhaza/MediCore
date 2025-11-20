@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from django.utils.dateparse import parse_date
+from django.http import HttpResponse
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,6 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
+import csv
+import io
 from .models import Invoice, Payment, RevenueEntry, ExpenseEntry
 from .serializers import InvoiceSerializer, PaymentSerializer, RevenueEntrySerializer, ExpenseEntrySerializer
 from .permissions import IsFinanceOrReadOnly
@@ -87,6 +90,94 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 			return Response({'detail': 'Medicine not found'}, status=status.HTTP_404_NOT_FOUND)
 		except Exception as e:
 			return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+	@action(detail=True, methods=['get'], url_path='download')
+	def download(self, request, pk=None):
+		"""Download a single invoice as CSV"""
+		invoice = self.get_object()
+		response = HttpResponse(content_type='text/csv')
+		response['Content-Disposition'] = f'attachment; filename="invoice_{invoice.id}.csv"'
+		
+		writer = csv.writer(response)
+		writer.writerow(['Invoice ID', invoice.id])
+		writer.writerow(['Patient', invoice.patient.name])
+		writer.writerow(['Medical ID', invoice.patient.medical_id])
+		writer.writerow(['Status', invoice.status])
+		writer.writerow(['Created At', invoice.created_at.strftime('%Y-%m-%d %H:%M:%S')])
+		writer.writerow(['Created By', invoice.created_by.username if invoice.created_by else 'N/A'])
+		writer.writerow([])
+		writer.writerow(['Services/Items'])
+		writer.writerow(['Code', 'Name', 'Amount'])
+		
+		for service in (invoice.services or []):
+			writer.writerow([
+				service.get('code', ''),
+				service.get('name', ''),
+				f"Kshs {service.get('amount', 0):.2f}"
+			])
+		
+		writer.writerow([])
+		writer.writerow(['Subtotal', f"Kshs {invoice.subtotal:.2f}"])
+		writer.writerow(['Discount', f"Kshs {invoice.discount:.2f}"])
+		writer.writerow(['Total', f"Kshs {invoice.total:.2f}"])
+		
+		if invoice.prescription:
+			writer.writerow([])
+			writer.writerow(['Prescription ID', invoice.prescription.id])
+			writer.writerow(['Medication', invoice.prescription.medication])
+		
+		return response
+
+	@action(detail=False, methods=['get'], url_path='download-all')
+	def download_all(self, request):
+		"""Download all invoices (with optional filtering) as CSV"""
+		queryset = self.filter_queryset(self.get_queryset())
+		
+		# Apply date filtering if provided
+		start_date = request.query_params.get('start_date')
+		end_date = request.query_params.get('end_date')
+		status_filter = request.query_params.get('status')
+		
+		if start_date:
+			start = parse_date(start_date)
+			if start:
+				queryset = queryset.filter(created_at__date__gte=start)
+		if end_date:
+			end = parse_date(end_date)
+			if end:
+				queryset = queryset.filter(created_at__date__lte=end)
+		if status_filter:
+			queryset = queryset.filter(status=status_filter)
+		
+		response = HttpResponse(content_type='text/csv')
+		filename = f"invoices_{date.today().isoformat()}.csv"
+		response['Content-Disposition'] = f'attachment; filename="{filename}"'
+		
+		writer = csv.writer(response)
+		writer.writerow([
+			'Invoice ID', 'Patient Name', 'Medical ID', 'Status', 'Subtotal', 
+			'Discount', 'Total', 'Created At', 'Created By', 'Prescription ID'
+		])
+		
+		for invoice in queryset:
+			services_summary = ', '.join([s.get('name', '') for s in (invoice.services or [])[:3]])
+			if len(invoice.services or []) > 3:
+				services_summary += '...'
+			
+			writer.writerow([
+				invoice.id,
+				invoice.patient.name,
+				invoice.patient.medical_id,
+				invoice.status,
+				f"{invoice.subtotal:.2f}",
+				f"{invoice.discount:.2f}",
+				f"{invoice.total:.2f}",
+				invoice.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+				invoice.created_by.username if invoice.created_by else 'N/A',
+				invoice.prescription.id if invoice.prescription else 'N/A'
+			])
+		
+		return response
 
 class PaymentViewSet(viewsets.ModelViewSet):
 	queryset = Payment.objects.select_related('invoice','recorded_by').order_by('-created_at')

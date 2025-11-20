@@ -22,6 +22,12 @@
 				style="border-left: 4px solid #f39c12;"
 			>
 				<b>{{ p.patient_detail?.name }}</b> — {{ p.medication }}
+				<div v-if="p.patient_detail?.national_id" style="font-size:0.85em; color:#2d3436; margin-top:4px;">
+					National ID: {{ p.patient_detail.national_id }}
+				</div>
+				<div v-if="p.patient_detail?.national_id" style="font-size:0.85em; color:#2d3436; margin-top:4px;">
+					National ID: {{ p.patient_detail.national_id }}
+				</div>
 				<div style="font-size:.9em; color:#666;">
 					Status: <span class="badge pending">{{ p.status }}</span>
 					• Doctor: {{ p.doctor }}
@@ -48,6 +54,9 @@
 				style="border-left: 4px solid #27ae60;"
 			>
 				<b>{{ p.patient_detail?.name }}</b> — {{ p.medication }}
+				<div v-if="p.patient_detail?.national_id" style="font-size:0.85em; color:#2d3436; margin-top:4px;">
+					National ID: {{ p.patient_detail.national_id }}
+				</div>
 				<div style="font-size:.9em; color:#666;">
 					Status: <span class="badge dispensed">DISPENSED</span> • Doctor: {{ p.doctor }}
 				</div>

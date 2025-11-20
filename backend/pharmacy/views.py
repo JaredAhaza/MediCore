@@ -419,7 +419,9 @@ class InventoryTransactionViewSet(viewsets.ModelViewSet):
 
 
 class PrescriptionDispenseViewSet(viewsets.ModelViewSet):
-    queryset = PrescriptionDispense.objects.all()
+    queryset = PrescriptionDispense.objects.select_related(
+        'medicine', 'pharmacist', 'prescription', 'prescription__patient', 'prescription__patient__patient_profile'
+    ).all()
     serializer_class = PrescriptionDispenseSerializer
     permission_classes = [CanDispensePrescription]
     filterset_fields = ['medicine', 'pharmacist', 'prescription']

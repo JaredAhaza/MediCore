@@ -7,16 +7,62 @@
 					{{ speaking ? 'Speaking…' : 'Voice Insights' }}
 				</button>
 			</div>
-			<input v-model="q" placeholder="Search by name or medical ID" @input="debouncedLoad" />
+			<input v-model="q" placeholder="Search by name, medical ID or national ID" @input="debouncedLoad" />
 		</div>
-		<div v-for="p in patients" :key="p.id" class="card" style="display: flex; justify-content: space-between; align-items: center;">
+		<div class="card filters-card">
+			<div class="filter-group">
+				<label>Gender</label>
+				<select v-model="filters.gender">
+					<option value="">All</option>
+					<option value="M">Male</option>
+					<option value="F">Female</option>
+					<option value="O">Other</option>
+				</select>
+			</div>
+			<div class="filter-group">
+				<label>National ID</label>
+				<select v-model="filters.nationalId">
+					<option value="any">All Patients</option>
+					<option value="with">With National ID</option>
+					<option value="without">Without National ID</option>
+				</select>
+			</div>
+			<div class="filter-group">
+				<label>Pending Prescriptions</label>
+				<select v-model="filters.pending">
+					<option value="any">All Patients</option>
+					<option value="pending">Has Pending</option>
+					<option value="nonpending">None Pending</option>
+				</select>
+			</div>
+			<div class="filter-summary">
+				Showing {{ filteredPatients.length }} of {{ patients.length }} patients
+			</div>
+		</div>
+
+		<div v-for="p in filteredPatients" :key="p.id" class="card" style="display: flex; justify-content: space-between; align-items: center;">
 			<div style="flex: 1;">
 				<b>{{ p.name }}</b> — {{ p.medical_id }}
 				<div style="font-size:.9em; color:#666;">{{ p.gender }} • {{ p.dob }}</div>
+				<div v-if="p.national_id" style="font-size:0.85em; color:#2d3436; margin-top:4px;">
+					National ID: {{ p.national_id }}
+				</div>
 			</div>
 			<div style="text-align: right; display: flex; gap: 8px; align-items: center; justify-content: flex-end;">
 				<router-link 
-					:to="{ name: 'PrescriptionCreate', query: { patient_username: p.username } }" 
+					:to="{
+						name: 'PrescriptionCreate',
+						query: {
+							patient_username: p.username,
+							patient_id: p.id,
+							patient_name: p.name,
+							patient_medical_id: p.medical_id,
+							patient_national_id: p.national_id,
+							patient_gender: p.gender,
+							patient_dob: p.dob,
+							patient_contact: p.contact
+						}
+					}" 
 					class="btn"
 					v-if="p.username"
 				>
@@ -38,12 +84,31 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import api from "../api/client";
 import { useVoiceInsights } from "@/composables/useVoiceInsights";
 let timer;
 const q = ref("");
 const patients = ref([]);
+const filters = reactive({
+	gender: "",
+	nationalId: "any",
+	pending: "any",
+});
+const filteredPatients = computed(() => {
+	return patients.value.filter((patient) => {
+		if (filters.gender) {
+			const normalized = (patient.gender || "").toUpperCase();
+			if (normalized !== filters.gender) return false;
+		}
+		if (filters.nationalId === "with" && !patient.national_id) return false;
+		if (filters.nationalId === "without" && patient.national_id) return false;
+		if (filters.pending === "pending" && !hasPendingPrescription(patient.username)) return false;
+		if (filters.pending === "nonpending" && hasPendingPrescription(patient.username)) return false;
+		return true;
+	});
+});
+
 // Track usernames of patients with at least one pending prescription
 const pendingUsernames = ref(new Set());
 const { speaking, speakInsights } = useVoiceInsights();
@@ -121,12 +186,16 @@ async function voiceInsights() {
 		const youngest = ages.length ? Math.min(...ages) : null;
 		const oldest = ages.length ? Math.max(...ages) : null;
 		const pendingCount = pendingUsernames.value.size;
+		const missingNationalId = patients.value.filter(p => !p.national_id).length;
 
 		const parts = [
 			`There are ${total} patients in the registry.`,
 			genderSummary ? `Gender split: ${genderSummary}.` : '',
 			avgAge ? `Average age is ${avgAge} years with youngest at ${youngest} and oldest at ${oldest}.` : '',
 			pendingCount ? `${pendingCount} patients have pending prescriptions requiring follow up.` : 'No patients have pending prescriptions right now.',
+			missingNationalId
+				? `${missingNationalId} patients still need national IDs recorded for compliance.`
+				: 'All patients have national IDs on record.',
 			withoutUsername
 				? `${withoutUsername} patients still need portal usernames for prescription tracking.`
 				: 'All patients have portal usernames assigned.'
@@ -170,5 +239,32 @@ async function voiceInsights() {
 .btn:disabled {
 	opacity: 0.6;
 	cursor: not-allowed;
+}
+
+.filters-card {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 12px;
+	align-items: end;
+}
+
+.filter-group label {
+	display: block;
+	margin-bottom: 4px;
+	font-weight: 600;
+	color: #2d3436;
+}
+
+.filter-group select {
+	width: 100%;
+	padding: 6px 8px;
+	border: 1px solid #dfe6e9;
+	border-radius: 4px;
+}
+
+.filter-summary {
+	font-size: 0.9em;
+	color: #636e72;
+	align-self: center;
 }
 </style>

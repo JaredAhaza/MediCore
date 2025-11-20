@@ -72,15 +72,20 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
     medicine_current_stock = serializers.SerializerMethodField(read_only=True)
     medicine_name = serializers.CharField(source='medicine.name', read_only=True)
     final_amount = serializers.SerializerMethodField(read_only=True)
+    pharmacist_username = serializers.CharField(source='pharmacist.username', read_only=True)
+    pharmacist_id = serializers.IntegerField(source='pharmacist.id', read_only=True)
+    patient_name = serializers.SerializerMethodField(read_only=True)
+    patient_username = serializers.CharField(source='prescription.patient.username', read_only=True)
 
     class Meta:
         model = PrescriptionDispense
         fields = [
             'id', 'prescription', 'medicine', 'medicine_name', 'quantity_dispensed',
             'auto_calculated_quantity', 'amount_charged', 'discount_amount', 'additional_charges',
-            'additional_charges_note', 'final_amount', 'pharmacist', 'notes', 'dispensed_at', 'medicine_current_stock'
+            'additional_charges_note', 'final_amount', 'pharmacist', 'pharmacist_username', 'pharmacist_id', 
+            'patient_name', 'patient_username', 'notes', 'dispensed_at', 'medicine_current_stock'
         ]
-        read_only_fields = ['dispensed_at', 'pharmacist', 'auto_calculated_quantity', 'medicine_current_stock', 'medicine_name', 'final_amount']
+        read_only_fields = ['dispensed_at', 'pharmacist', 'pharmacist_username', 'pharmacist_id', 'patient_name', 'patient_username', 'auto_calculated_quantity', 'medicine_current_stock', 'medicine_name', 'final_amount']
 
     def _extract_number(self, text):
         match = re.search(r'\d+', str(text))
@@ -235,6 +240,19 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
     def get_final_amount(self, obj):
         try:
             return obj.final_amount
+        except Exception:
+            return None
+
+    def get_patient_name(self, obj):
+        try:
+            prescription = obj.prescription
+            if prescription and prescription.patient:
+                # Try to get patient profile name
+                if hasattr(prescription.patient, 'patient_profile'):
+                    return prescription.patient.patient_profile.name
+                # Fallback to username
+                return prescription.patient.username
+            return None
         except Exception:
             return None
 

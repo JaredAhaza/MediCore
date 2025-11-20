@@ -4,17 +4,23 @@
       <h2>Finance</h2>
       <div style="display:flex; align-items:center; justify-content:space-between;">
         <div style="color:#666; font-size:.95em;">Overview of invoices, payments, and stock spending.</div>
-        <button class="btn" @click="voiceInsights" :disabled="speaking">{{ speaking ? 'Speaking…' : 'Voice Insights' }}</button>
+        <div style="display:flex; gap:10px;">
+          <RouterLink to="/finance/invoices" class="btn secondary">View All Invoices</RouterLink>
+          <button class="btn" @click="voiceInsights" :disabled="speaking">{{ speaking ? 'Speaking…' : 'Voice Insights' }}</button>
+        </div>
       </div>
     </div>
     <FinanceSummary />
+    <ExpensesPanel />
     <InvoiceImport />
   </div>
 </template>
 
 <script setup>
+import { RouterLink } from 'vue-router';
 import FinanceSummary from '@/components/FinanceSummary.vue';
 import InvoiceImport from '@/components/InvoiceImport.vue';
+import ExpensesPanel from '@/components/ExpensesPanel.vue';
 
 import client from '@/api/client';
 import { useVoiceInsights } from '@/composables/useVoiceInsights';
@@ -58,5 +64,7 @@ async function voiceInsights() {
 
 <style scoped>
 .card { padding: 12px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 12px; }
-.btn { background: #3b82f6; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.btn { background: #3b82f6; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.secondary { background: #636e72; }
+.btn:hover { opacity: 0.9; }
 </style>

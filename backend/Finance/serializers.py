@@ -4,10 +4,12 @@ from patients.serializers import PatientSerializer
 
 class InvoiceSerializer(serializers.ModelSerializer):
 	patient_detail = PatientSerializer(source='patient', read_only=True)
+	created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+	created_by_id = serializers.IntegerField(source='created_by.id', read_only=True)
 	class Meta:
 		model = Invoice
-		fields = ['id','patient','patient_detail','prescription','created_by','services','subtotal','discount','total','status','created_at','updated_at']
-		read_only_fields = ['created_by','subtotal','total','created_at','updated_at']
+		fields = ['id','patient','patient_detail','prescription','created_by','created_by_username','created_by_id','services','subtotal','discount','total','status','created_at','updated_at']
+		read_only_fields = ['created_by','created_by_username','created_by_id','subtotal','total','created_at','updated_at']
 
 	def create(self, validated_data):
 		req = self.context.get('request')

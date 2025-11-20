@@ -19,6 +19,10 @@
 				<option value="O">Other</option>
 			</select>
 			
+			<label>National ID</label>
+			<input v-model="form.national_id" maxlength="20" placeholder="e.g. 12345678" />
+			<small style="color:#666; display:block; margin-top:4px;">Optional but recommended for patient verification.</small>
+			
 			<label>Contact</label>
 			<input v-model="form.contact" />
 			
@@ -36,13 +40,19 @@ import { useRouter } from "vue-router";
 import api from "../api/client";
 
 const router = useRouter();
-const form = reactive({ name:"", username:"", dob:"", gender:"", contact:"" });
+const form = reactive({ name:"", username:"", dob:"", gender:"", contact:"", national_id:"" });
 const err = ref(""); const saving = ref(false);
 
 async function save() {
 	err.value = ""; saving.value = true;
 	try {
-		await api.post("/api/patients/", form);
+		const payload = { ...form };
+		if (!payload.national_id?.trim()) {
+			delete payload.national_id;
+		} else {
+			payload.national_id = payload.national_id.trim();
+		}
+		await api.post("/api/patients/", payload);
 		router.push({ name: "PatientsList" });
 	} catch (e) {
 		err.value = e?.response?.data ? JSON.stringify(e.response.data) : "Failed";
