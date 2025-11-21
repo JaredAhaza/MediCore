@@ -63,6 +63,21 @@ class Prescription(models.Model):
         blank=True,
         related_name='pharmacist_prescriptions'
     )
+    # New fields for prescription uploads
+    prescription_image = models.FileField(
+        upload_to='prescriptions/%Y/%m/%d/',
+        null=True,
+        blank=True,
+        help_text='Scanned or photographed prescription (images or PDF)'
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_prescriptions',
+        help_text='User who created this prescription entry'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

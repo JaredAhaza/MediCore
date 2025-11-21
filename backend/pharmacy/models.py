@@ -66,7 +66,7 @@ class InventoryTransaction(models.Model):
     medicine = models.ForeignKey(Medicine, on_delete=models.CASCADE, related_name='transactions')
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     quantity = models.IntegerField()
-    prescription = models.ForeignKey('emr.Prescription', on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_transactions')
+    prescription = models.ForeignKey('patients.Prescription', on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_transactions')
     notes = models.TextField(blank=True)
     batch_number = models.CharField(max_length=100, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
@@ -142,7 +142,7 @@ class Prescription(models.Model):
 
 
 class PrescriptionDispense(models.Model):
-    prescription = models.OneToOneField('emr.Prescription', on_delete=models.CASCADE, related_name='dispense_record')
+    prescription = models.OneToOneField('patients.Prescription', on_delete=models.CASCADE, related_name='dispense_record')
     medicine = models.ForeignKey(Medicine, on_delete=models.PROTECT)
     quantity_dispensed = models.IntegerField(validators=[MinValueValidator(1)])
     pharmacist = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='dispensed_medicines')

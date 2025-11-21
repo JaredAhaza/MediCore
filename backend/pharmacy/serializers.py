@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.db import transaction as db_transaction
 from rest_framework import serializers
 from .models import Medicine, InventoryTransaction, PrescriptionDispense
-from emr.models import Prescription
+from patients.models import Prescription
 from Finance.models import Invoice
 
 
@@ -75,7 +75,7 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
     pharmacist_username = serializers.CharField(source='pharmacist.username', read_only=True)
     pharmacist_id = serializers.IntegerField(source='pharmacist.id', read_only=True)
     patient_name = serializers.SerializerMethodField(read_only=True)
-    patient_username = serializers.CharField(source='prescription.patient.username', read_only=True)
+    patient_username = serializers.CharField(source='prescription.patient.user.username', read_only=True, default='')
 
     class Meta:
         model = PrescriptionDispense
@@ -247,11 +247,7 @@ class PrescriptionDispenseSerializer(serializers.ModelSerializer):
         try:
             prescription = obj.prescription
             if prescription and prescription.patient:
-                # Try to get patient profile name
-                if hasattr(prescription.patient, 'patient_profile'):
-                    return prescription.patient.patient_profile.name
-                # Fallback to username
-                return prescription.patient.username
+                return prescription.patient.name
             return None
         except Exception:
             return None

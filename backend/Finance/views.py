@@ -46,7 +46,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 		Expects: prescription (id), medicine (id), quantity (int, optional), discount?, additional_charges?
 		"""
 		try:
-			from emr.models import Prescription as EMRPrescription
+			from patients.models import Prescription
 			from pharmacy.models import Medicine
 			pid = int(request.data.get('prescription'))
 			mid = int(request.data.get('medicine'))
@@ -61,7 +61,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 				return Response({'detail': 'Invalid monetary values for discount or additional charges'}, status=status.HTTP_400_BAD_REQUEST)
 			if discount < 0 or additional_charges < 0:
 				return Response({'detail': 'Discount and additional charges must be zero or positive'}, status=status.HTTP_400_BAD_REQUEST)
-			presc = EMRPrescription.objects.get(pk=pid)
+			presc = Prescription.objects.get(pk=pid)
 			med = Medicine.objects.get(pk=mid)
 			amount = Decimal(str(med.selling_price or 0)) * qty
 			services = [{
@@ -76,7 +76,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 					'amount': float(additional_charges)
 				})
 			invoice = Invoice.objects.create(
-				patient=presc.patient.patient_profile,
+				patient=presc.patient,
 				prescription=presc,
 				created_by=request.user,
 				discount=discount,
@@ -84,7 +84,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 			)
 			ser = self.get_serializer(invoice)
 			return Response(ser.data, status=status.HTTP_201_CREATED)
-		except EMRPrescription.DoesNotExist:
+		except Prescription.DoesNotExist:
 			return Response({'detail': 'Prescription not found'}, status=status.HTTP_404_NOT_FOUND)
 		except Medicine.DoesNotExist:
 			return Response({'detail': 'Medicine not found'}, status=status.HTTP_404_NOT_FOUND)

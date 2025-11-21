@@ -8,7 +8,7 @@ from django.core.validators import MinValueValidator
 
 class Invoice(models.Model):
 	patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='invoices')
-	prescription = models.ForeignKey('emr.Prescription', on_delete=models.SET_NULL, null=True, blank=True, related_name='invoices')
+	prescription = models.ForeignKey('patients.Prescription', on_delete=models.SET_NULL, null=True, blank=True, related_name='invoices')
 	created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_invoices')
 	services = models.JSONField(default=list)  # [{code, name, amount}]
 	subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)

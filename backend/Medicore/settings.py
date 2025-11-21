@@ -144,10 +144,15 @@ STATICFILES_DIRS = [
     BASE_DIR.parent / 'frontend' / 'dist',
 ] if (BASE_DIR.parent / 'frontend' / 'dist').exists() else []
 
+# Media files (User uploads)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 if not DEBUG:
     # Insert WhiteNoise after SecurityMiddleware to preserve security headers
     MIDDLEWARE.insert(2, 'whitenoise.middleware.WhiteNoiseMiddleware')
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

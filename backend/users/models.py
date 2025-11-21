@@ -11,3 +11,4 @@ class User(AbstractUser):
         PATIENT = "PATIENT", "Patient"
 
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.ADMIN)
+    password_change_required = models.BooleanField(default=False, help_text="User must change password on next login")

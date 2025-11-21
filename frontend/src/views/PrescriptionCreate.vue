@@ -47,6 +47,50 @@
 			<label>Instructions</label>
 			<textarea v-model="form.instructions" placeholder="Optional instructions" />
 
+			<!-- Prescription File Upload -->
+			<div class="upload-section">
+				<label>
+					📄 Prescription File (Optional)
+					<span class="help-text">Upload scanned prescription (Image or PDF)</span>
+				</label>
+				
+				<div class="upload-area">
+					<input 
+						type="file" 
+						id="prescription_image"
+						ref="fileInput"
+						@change="handleFileChange"
+						accept="image/*,application/pdf"
+						capture="environment"
+						style="display: none;"
+					/>
+					
+					<button 
+						type="button" 
+						@click="$refs.fileInput.click()"
+						class="upload-btn"
+					>
+						<span v-if="!prescriptionImage">📷 Take Photo / Upload File</span>
+						<span v-else>✓ Change File</span>
+					</button>
+
+					<div v-if="prescriptionImage" class="image-preview">
+						<div v-if="isPDF" class="pdf-indicator">
+							📄 PDF File
+						</div>
+						<img v-else :src="imagePreviewUrl" alt="Prescription preview" />
+						<button 
+							type="button" 
+							@click="removeImage"
+							class="remove-btn"
+						>
+							✕ Remove
+						</button>
+						<p class="file-name">{{ prescriptionImage.name }}</p>
+					</div>
+				</div>
+			</div>
+
 			<button :disabled="saving">{{ saving ? 'Saving...' : 'Create' }}</button>
 			<p v-if="err" style="color:red; margin-top:.5rem;">{{ err }}</p>
 		</form>
@@ -54,10 +98,10 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted, watch } from "vue";
-import { useRouter, useRoute } from "vue-router";
-import api from "../api/client";
 import SearchableSelect from "@/components/SearchableSelect.vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import api from "../api/client";
 
 const router = useRouter();
 const route = useRoute();
@@ -75,9 +119,16 @@ const err = ref("");
 const saving = ref(false);
 const selectedPatient = ref(null);
 const selectedMedicine = ref(null);
+const prescriptionImage = ref(null);
+const imagePreviewUrl = ref(null);
 
 // Check if patient came from query param (from PatientsList)
 const patientFromQuery = computed(() => !!route.query.patient_username);
+
+// Check if selected file is PDF
+const isPDF = computed(() => {
+	return prescriptionImage.value?.type === 'application/pdf';
+});
 
 watch(selectedPatient, (option) => {
 	form.patient_username = option?.raw?.username || "";
@@ -102,6 +153,27 @@ onMounted(async () => {
 	}
 });
 
+function handleFileChange(event) {
+	const file = event.target.files[0];
+	if (file) {
+		prescriptionImage.value = file;
+		// Create preview URL only for images
+		if (file.type.startsWith('image/')) {
+			imagePreviewUrl.value = URL.createObjectURL(file);
+		}
+	}
+}
+
+function removeImage() {
+	prescriptionImage.value = null;
+	imagePreviewUrl.value = null;
+	// Reset file input
+	const fileInput = document.getElementById('prescription_image');
+	if (fileInput) {
+		fileInput.value = '';
+	}
+}
+
 async function save() {
 	if (!selectedPatient.value) {
 		err.value = "Please select a patient from the list.";
@@ -115,15 +187,21 @@ async function save() {
 	err.value = "";
 	saving.value = true;
 	try {
-		const payload = {
-			patient_username: selectedPatient.value.raw?.username,
-			medication: selectedMedicine.value.raw?.name,
-			dosage: form.dosage,
-			duration: form.duration,
-			instructions: form.instructions,
-			status: form.status,
-		};
-		await api.post("/api/prescriptions/", payload);
+		// Use FormData for file upload
+		const formData = new FormData();
+		formData.append('patient_username', selectedPatient.value.raw?.username);
+		formData.append('medication', selectedMedicine.value.raw?.name);
+		formData.append('dosage', form.dosage);
+		formData.append('duration', form.duration);
+		formData.append('instructions', form.instructions);
+		formData.append('status', form.status);
+		
+		// Add file if selected
+		if (prescriptionImage.value) {
+			formData.append('prescription_image', prescriptionImage.value);
+		}
+
+		await api.post("/api/prescriptions/", formData);
 		router.push({ name: "PrescriptionsList" });
 	} catch (e) {
 		if (e?.response?.data) {
@@ -260,5 +338,96 @@ function formatApiError(data) {
 .info-panel.warning {
 	background: #fff8e6;
 	border-left-color: #f39c12;
+}
+
+.upload-section {
+	margin: 1.5rem 0;
+}
+
+.upload-section label {
+	display: block;
+	margin-bottom: 0.5rem;
+	font-weight: 600;
+}
+
+.help-text {
+	display: block;
+	font-size: 0.85em;
+	color: #7f8c8d;
+	font-weight: normal;
+	margin-top: 4px;
+}
+
+.upload-area {
+	margin-top: 0.5rem;
+}
+
+.upload-btn {
+	background: #3498db;
+	color: white;
+	padding: 12px 20px;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 1em;
+	font-weight: 600;
+	transition: all 0.2s;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.upload-btn:hover {
+	background: #2980b9;
+	transform: translateY(-2px);
+	box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.image-preview {
+	margin-top: 1rem;
+	padding: 15px;
+	background: #f8f9fa;
+	border-radius: 8px;
+	border: 2px dashed #dee2e6;
+}
+
+.image-preview img {
+	max-width: 100%;
+	height: auto;
+	border-radius: 6px;
+	margin-bottom: 10px;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.pdf-indicator {
+	padding: 40px;
+	text-align: center;
+	font-size: 3em;
+	background: #fff;
+	border-radius: 6px;
+	margin-bottom: 10px;
+}
+
+.remove-btn {
+	background: #e74c3c;
+	color: white;
+	padding: 8px 16px;
+	border: none;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 0.9em;
+	font-weight: 600;
+	transition: all 0.2s;
+}
+
+.remove-btn:hover {
+	background: #c0392b;
+}
+
+.file-name {
+	margin: 10px 0 0 0;
+	font-size: 0.85em;
+	color: #636e72;
+	font-style: italic;
 }
 </style>
